@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Spotify Lyrics Overlay</title>
+    <!-- Silence standard browser favicon.ico requests -->
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="lyrics-container">
+        <!-- Drag handle -->
+        <div id="drag-handle">Spotify Lyrics</div>
+        
+        <!-- Close button for frameless window -->
+        <button id="close-btn" title="Close Overlay">&times;</button>
+        
+        <div id="auth-section" style="display: none;">
+            <p>Please login to Spotify to see lyrics</p>
+            <button id="login-btn">Login to Spotify</button>
+        </div>
+        <div id="lyrics-section">
+            <div id="song-info">Connecting to Spotify...</div>
+            <div id="lyrics-text">Searching for lyrics...</div>
+        </div>
+        
+        <!-- Resize handle -->
+        <div id="resize-handle"></div>
+    </div>
+    
+    <!-- Neutralino.js client -->
+    <script src="/js/neutralino.js"></script>
+    <!-- Your app's source files -->
+    <script src="/js/main.js"></script>
+</body>
+</html>

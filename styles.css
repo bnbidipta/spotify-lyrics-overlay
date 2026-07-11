@@ -1,0 +1,75 @@
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: transparent;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none;
+}
+
+#lyrics-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    padding: 24px;
+    background: rgba(18, 18, 18, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    width: 90%;
+    max-width: 550px;
+    box-sizing: border-box;
+    -webkit-app-region: drag;
+}
+
+#auth-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+#login-btn {
+    background: #1DB954;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: bold;
+    -webkit-app-region: no-drag;
+}
+
+#lyrics-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#song-info {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    opacity: 0.8;
+    -webkit-app-region: no-drag;
+}
+
+#lyrics-text {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.4;
+    max-height: 260px;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -webkit-app-region: no-drag;
+}
+
+#lyrics-text::-webkit-scrollbar {
+    display: none;
+}

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Spotify Lyrics Overlay</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="lyrics-container">
+        <div id="auth-section" style="display: none;">
+            <p>Please login to Spotify to see lyrics</p>
+            <button id="login-btn">Login to Spotify</button>
+        </div>
+        <div id="lyrics-section">
+            <div id="song-info">Connecting to Spotify...</div>
+            <div id="lyrics-text">Searching for lyrics...</div>
+        </div>
+    </div>
+    <script>
+        const authSection = document.getElementById('auth-section');
+        const lyricsSection = document.getElementById('lyrics-section');
+        const songInfoEl = document.getElementById('song-info');
+        const lyricsTextEl = document.getElementById('lyrics-text');
+        const loginBtn = document.getElementById('login-btn');
+
+        loginBtn.onclick = () => {
+            window.electronAPI.requestLogin();
+        };
+
+        window.electronAPI.onAuthRequired((required) => {
+            if (required) {
+                authSection.style.display = 'flex';
+                lyricsSection.style.display = 'none';
+            }
+        });
+
+        window.electronAPI.onAuthStatus((status) => {
+            if (status === 'authenticated') {
+                authSection.style.display = 'none';
+                lyricsSection.style.display = 'flex';
+            }
+        });
+
+        window.electronAPI.onUpdateLyrics((data) => {
+            songInfoEl.innerText = data.songInfo;
+            lyricsTextEl.innerText = data.lyrics;
+        });
+    </script>
+</body>
+</html>

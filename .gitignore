@@ -1,0 +1,22 @@
+# Dependency directories
+node_modules/
+
+# Env credentials (strictly ignored for security)
+.env
+neutralino-release/.env
+
+# Compilation and build outputs
+dist/
+neutralino-app/dist/
+neutralino-app/bin/
+
+# Temporary and log files
+*.log
+neutralino-app/*.log
+neutralino-release/*.log
+
+# Neutralino storage & minified client
+.storage/
+neutralino-app/.storage/
+neutralino.js
+neutralino-app/resources/js/neutralino.js
