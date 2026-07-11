@@ -140,7 +140,7 @@ async function performLogin() {
         const listenerCommand = 'powershell -ExecutionPolicy Bypass -File auth_listener.ps1';
         
         // 2. Open Spotify Auth page in default system browser
-        const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyClientId}&redirect_uri=http://127.0.0.1:8888/callback&response_type=code&scope=user-read-currently-playing`;
+        const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyClientId}&redirect_uri=http://127.0.0.1:8888/callback&response_type=code&scope=user-read-currently-playing&show_dialog=true`;
         await Neutralino.os.open(authUrl);
 
         // 3. Await PowerShell command result
