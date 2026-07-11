@@ -43,9 +43,19 @@ if (-not $userToken) {
 
 if ($userToken) {
     try {
-        # 1. Search for the track on Musixmatch
-        $trackNameEsc = [uri]::EscapeDataString($trackName)
-        $artistNameEsc = [uri]::EscapeDataString($artistName)
+        # Clean track name and artist name to strip suffixes/features and improve Musixmatch search matching
+        $cleanTrack = $trackName -replace "\s*\((feat|with|featuring)\.?\s+[^)]+\)", ""
+        $cleanTrack = $cleanTrack -replace "\s*\((Remastered|Deluxe|Expanded|Special|Anniversary)\s*[^)]*\)", ""
+        $cleanTrack = $cleanTrack -replace "\s*-\s*(Remastered|Deluxe|Expanded|Special|Anniversary)\s*.*", ""
+        $cleanTrack = $cleanTrack -replace "\s*\((Live|Acoustic|Radio Edit|Remix|Edit|Mix)\)", ""
+        $cleanTrack = $cleanTrack.Trim()
+
+        $cleanArtist = $artistName -replace "\s*(feat|with|featuring)\.?\s+.*", ""
+        $cleanArtist = ($cleanArtist -split ",")[0].Trim()
+
+        # 1. Search for the track on Musixmatch using cleaned queries
+        $trackNameEsc = [uri]::EscapeDataString($cleanTrack)
+        $artistNameEsc = [uri]::EscapeDataString($cleanArtist)
         $searchUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.search?q_track=$trackNameEsc&q_artist=$artistNameEsc&page_size=1&usertoken=$userToken&app_id=web-desktop-app-v1.0"
         
         $searchResponse = Invoke-RestMethod -Uri $searchUri -Method Get -Headers $headers -WebSession $session
