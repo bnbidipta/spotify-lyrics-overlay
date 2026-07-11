@@ -239,15 +239,8 @@ function startPlaybackMonitoring() {
                 updateUI(songInfo, 'Searching for lyrics...');
                 lastActiveIndex = -1;
 
-                // Resolve lyrics from Lrclib
-                let result = await fetchLyrics(track.name, track.artists[0].name);
-                
-                // Fallback to Musixmatch if Lrclib doesn't have it
-                if (!result.synced && result.lines.length === 1 && result.lines[0].text === "Lyrics not found for this track.") {
-                    updateUI(songInfo, 'Searching fallback (Musixmatch)...');
-                    const fallbackResult = await fetchMusixmatchLyrics(track.name, track.artists[0].name);
-                    result = fallbackResult;
-                }
+                // Resolve lyrics from backend (Lrclib with Musixmatch fallback)
+                const result = await fetchLyrics(track.name, track.artists[0].name);
 
                 parsedLyrics = result.lines;
                 renderLyrics(parsedLyrics);
@@ -259,36 +252,14 @@ function startPlaybackMonitoring() {
     }, 3000);
 }
 
-// Fetch lyrics from Lrclib API
+// Fetch lyrics from Lrclib (primary) or Musixmatch (fallback) via backend PowerShell script
 async function fetchLyrics(trackName, artistName) {
-    try {
-        const url = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artistName)}&track_name=${encodeURIComponent(trackName)}`;
-        const response = await fetch(url);
-        if (!response.ok) {
-            return { synced: false, lines: [{ time: -1, text: "Lyrics not found for this track." }] };
-        }
-        const data = await response.json();
-        if (data) {
-            if (data.syncedLyrics) {
-                return { synced: true, lines: parseSyncedLyrics(data.syncedLyrics) };
-            } else if (data.plainLyrics) {
-                return { synced: false, lines: parsePlainLyrics(data.plainLyrics) };
-            }
-        }
-        return { synced: false, lines: [{ time: -1, text: "Lyrics not found for this track." }] };
-    } catch (err) {
-        return { synced: false, lines: [{ time: -1, text: "Lyrics not found for this track." }] };
-    }
-}
-
-// Query Musixmatch fallback via PowerShell script
-async function fetchMusixmatchLyrics(trackName, artistName) {
     try {
         // Escape single quotes inside single-quoted strings for PowerShell
         const cleanTrack = trackName.replace(/'/g, "''");
         const cleanArtist = artistName.replace(/'/g, "''");
         
-        const command = `powershell -ExecutionPolicy Bypass -File fetch_musixmatch.ps1 -trackName '${cleanTrack}' -artistName '${cleanArtist}'`;
+        const command = `powershell -ExecutionPolicy Bypass -File fetch_lyrics.ps1 -trackName '${cleanTrack}' -artistName '${cleanArtist}'`;
         const result = await Neutralino.os.execCommand(command);
         
         if (result.stdOut) {
@@ -302,7 +273,7 @@ async function fetchMusixmatchLyrics(trackName, artistName) {
             }
         }
     } catch (err) {
-        console.error('Musixmatch fallback query error:', err);
+        console.error('Lyrics query error:', err);
     }
     return { synced: false, lines: [{ time: -1, text: "Lyrics not found for this track." }] };
 }

@@ -47,13 +47,13 @@ The project has been cleaned of all heavy Electron leftovers and organized clean
 │   │   ├── icons/               # 3D Glossy App Icon
 │   │   └── index.html
 │   ├── neutralino.config.json   # Neutralino configuration and mode profiles
-│   └── fetch_musixmatch.ps1     # Background PowerShell scraper for Musixmatch
+│   └── fetch_lyrics.ps1         # Unified background scraper for Lrclib & Musixmatch
 │
 ├── neutralino-release/          # Distribution folder
 │   ├── spotify-lyrics-overlay.exe # Native compiled C++ execution engine
 │   ├── resources.neu            # Bundled front-end app assets
 │   ├── auth_listener.ps1        # Native OAuth listener script (port 8888)
-│   └── fetch_musixmatch.ps1     # Released copy of the Musixmatch helper
+│   └── fetch_lyrics.ps1         # Released copy of the unified helper
 │
 ├── .agents/
 │   └── AGENTS.md                # Neutralinojs development rules & guardrails
