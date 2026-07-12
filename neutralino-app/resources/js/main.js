@@ -255,11 +255,11 @@ function startPlaybackMonitoring() {
 // Fetch lyrics from Lrclib (primary) or Musixmatch (fallback) via backend PowerShell script
 async function fetchLyrics(trackName, artistName) {
     try {
-        // Escape single quotes inside single-quoted strings for PowerShell
-        const cleanTrack = trackName.replace(/'/g, "''");
-        const cleanArtist = artistName.replace(/'/g, "''");
+        // Escape double quotes for shell arguments
+        const cleanTrack = trackName.replace(/"/g, '\\"');
+        const cleanArtist = artistName.replace(/"/g, '\\"');
         
-        const command = `powershell -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" -trackName '${cleanTrack}' -artistName '${cleanArtist}'`;
+        const command = `powershell -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" "${cleanTrack}" "${cleanArtist}"`;
         const result = await Neutralino.os.execCommand(command);
         
         if (result.stdOut) {
