@@ -153,6 +153,8 @@ try {
                 if ($subtitleBody) {
                     $Output.synced = $true
                     $Output.lyrics = $subtitleBody
+                    $Output | ConvertTo-Json -Compress
+                    exit
                 }
             }
             elseif ($track.has_lyrics -eq 1) {
@@ -165,9 +167,29 @@ try {
                     $lyricsBody = $lyricsBody -replace "\*\*\*\*\*\ *[\s\S]*", ""
                     $Output.synced = $false
                     $Output.lyrics = $lyricsBody.Trim()
+                    $Output | ConvertTo-Json -Compress
+                    exit
                 }
             }
         }
+    }
+} catch {
+    # Proceed to Lyrics.ovh if Musixmatch fails
+}
+
+
+# ------------------------------------------------------------
+# 4. Try Lyrics.ovh (Quaternary Fallback - Plain Lyrics)
+# ------------------------------------------------------------
+try {
+    $trackEsc = [uri]::EscapeDataString($cleanTrack)
+    $artistEsc = [uri]::EscapeDataString($cleanArtist)
+    $url = "https://api.lyrics.ovh/v1/$artistEsc/$trackEsc"
+    
+    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 5
+    if ($response -and $response.lyrics) {
+        $Output.synced = $false
+        $Output.lyrics = $response.lyrics
     }
 } catch {
     # Fallback to default not found response

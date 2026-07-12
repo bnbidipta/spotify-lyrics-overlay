@@ -9,7 +9,7 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 ## Features
 
 - **Apple Music-Style Synced Scrolling**: Integrates a real-time local timing loop (`requestAnimationFrame`) interpolating Spotify's playback to center, scale, glow, and scroll the active lyrics line with smooth gradient masks.
-- **Musixmatch Fallback Lyrics**: If the track is missing in Lrclib (primary provider), the application automatically falls back to query Musixmatch dynamically via a local background PowerShell API helper.
+- **Multi-Provider Synced & Plain Scrapers (Lrclib, NetEase, Musixmatch & Lyrics.ovh)**: Bypasses browser CORS constraints by calling a background PowerShell script. It implements a 4-level fallback pipeline (Lrclib -> NetEase -> Musixmatch -> Lyrics.ovh), automatically splitting track names on " - " to remove single/deluxe suffixes and feature tags, guaranteeing maximum lyrics coverage.
 - **Token Caching & Session Persistence**: Caches Spotify authentication tokens and Musixmatch API search tokens locally to ensure instant load times and completely prevent API rate limiting.
 - **WebView2 Transparency & Control Fixes**:
   - Drag the borderless window easily from the designated top header bar.
@@ -47,7 +47,7 @@ The project has been cleaned of all heavy Electron leftovers and organized clean
 │   │   ├── icons/               # 3D Glossy App Icon
 │   │   └── index.html
 │   ├── neutralino.config.json   # Neutralino configuration and mode profiles
-│   └── fetch_lyrics.ps1         # Unified background scraper for Lrclib & Musixmatch
+│   └── fetch_lyrics.ps1         # Unified background scraper for Lrclib, NetEase, Musixmatch & Lyrics.ovh
 │
 ├── neutralino-release/          # Distribution folder
 │   ├── spotify-lyrics-overlay.exe # Native compiled C++ execution engine
