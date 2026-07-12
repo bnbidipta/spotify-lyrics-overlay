@@ -8,13 +8,36 @@ $Output = @{
     lyrics = "Lyrics not found for this track."
 }
 
+# Global Query Cleaning to maximize match rates across all providers
+# 1. Clean track name: split on " - " (removes suffixes like "- Single Version")
+$cleanTrack = $trackName
+if ($cleanTrack -like "* - *") {
+    $parts = $cleanTrack -split " - "
+    if ($parts[0].Trim()) {
+        $cleanTrack = $parts[0].Trim()
+    }
+}
+# Strip feature brackets, remaster notations, and performance descriptors
+$cleanTrack = $cleanTrack -replace "\s*\((feat|with|featuring)\.?\s+[^)]+\)", ""
+$cleanTrack = $cleanTrack -replace "\s*\((Remastered|Deluxe|Expanded|Special|Anniversary)\s*[^)]*\)", ""
+$cleanTrack = $cleanTrack -replace "\s*-\s*(Remastered|Deluxe|Expanded|Special|Anniversary)\s*.*", ""
+$cleanTrack = $cleanTrack -replace "\s*\((Live|Acoustic|Radio Edit|Remix|Edit|Mix)\)", ""
+$cleanTrack = $cleanTrack.Trim()
+
+# 2. Clean artist name: strip multiple artists or features
+$cleanArtist = $artistName -replace "\s*(feat|with|featuring)\.?\s+.*", ""
+$cleanArtist = ($cleanArtist -split ",")[0].Trim()
+
+
+# ------------------------------------------------------------
 # 1. Try Lrclib first on the backend (Bypasses browser CORS policy)
+# ------------------------------------------------------------
 try {
-    $trackEsc = [uri]::EscapeDataString($trackName)
-    $artistEsc = [uri]::EscapeDataString($artistName)
+    $trackEsc = [uri]::EscapeDataString($cleanTrack)
+    $artistEsc = [uri]::EscapeDataString($cleanArtist)
     $url = "https://lrclib.net/api/get?artist_name=$artistEsc&track_name=$trackEsc"
     
-    # Send request with a 5-second timeout to prevent hanging if Lrclib has service issues
+    # 5-second timeout to prevent hanging if Lrclib is offline
     $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 5
     if ($response) {
         if ($response.syncedLyrics) {
@@ -30,10 +53,42 @@ try {
         }
     }
 } catch {
-    # If Lrclib fails (e.g. 504 Gateway Time-out), proceed to Musixmatch fallback
+    # Proceed to NetEase if Lrclib fails
 }
 
-# 2. Musixmatch Fallback
+
+# ------------------------------------------------------------
+# 2. Try NetEase Cloud Music (Secondary Fallback)
+# ------------------------------------------------------------
+try {
+    $query = [uri]::EscapeDataString("$cleanArtist $cleanTrack")
+    $searchUrl = "https://music.163.com/api/search/get/web?s=$query&type=1&limit=5"
+    
+    $searchResponse = Invoke-RestMethod -Uri $searchUrl -Method Get -TimeoutSec 5
+    if ($searchResponse -and $searchResponse.result) {
+        $resultObj = ConvertFrom-Json $searchResponse.result
+        if ($resultObj.songs -and $resultObj.songs.Count -gt 0) {
+            $songId = $resultObj.songs[0].id
+            
+            $lyricUrl = "https://music.163.com/api/song/lyric?os=pc&id=$songId&lv=-1&kv=-1&tv=-1"
+            $lyricResponse = Invoke-RestMethod -Uri $lyricUrl -Method Get -TimeoutSec 5
+            
+            if ($lyricResponse -and $lyricResponse.lrc -and $lyricResponse.lrc.lyric) {
+                $Output.synced = $true
+                $Output.lyrics = $lyricResponse.lrc.lyric
+                $Output | ConvertTo-Json -Compress
+                exit
+            }
+        }
+    }
+} catch {
+    # Proceed to Musixmatch if NetEase fails
+}
+
+
+# ------------------------------------------------------------
+# 3. Musixmatch Fallback (Tertiary Fallback)
+# ------------------------------------------------------------
 try {
     $headers = @{
         "User-Agent" = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Musixmatch/0.19.4 Chrome/58.0.3029.110 Electron/1.7.6 Safari/537.36"
@@ -65,16 +120,6 @@ try {
     }
 
     if ($userToken) {
-        # Clean track name and artist name to strip suffixes/features
-        $cleanTrack = $trackName -replace "\s*\((feat|with|featuring)\.?\s+[^)]+\)", ""
-        $cleanTrack = $cleanTrack -replace "\s*\((Remastered|Deluxe|Expanded|Special|Anniversary)\s*[^)]*\)", ""
-        $cleanTrack = $cleanTrack -replace "\s*-\s*(Remastered|Deluxe|Expanded|Special|Anniversary)\s*.*", ""
-        $cleanTrack = $cleanTrack -replace "\s*\((Live|Acoustic|Radio Edit|Remix|Edit|Mix)\)", ""
-        $cleanTrack = $cleanTrack.Trim()
-
-        $cleanArtist = $artistName -replace "\s*(feat|with|featuring)\.?\s+.*", ""
-        $cleanArtist = ($cleanArtist -split ",")[0].Trim()
-
         $trackNameEsc = [uri]::EscapeDataString($cleanTrack)
         $artistNameEsc = [uri]::EscapeDataString($cleanArtist)
         $searchUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.search?q_track=$trackNameEsc&q_artist=$artistNameEsc&page_size=1&usertoken=$userToken&app_id=web-desktop-app-v1.0"
