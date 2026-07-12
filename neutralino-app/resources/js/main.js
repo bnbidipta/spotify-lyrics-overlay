@@ -447,4 +447,66 @@ async function onStart() {
     }
 }
 
+// Setup Context Menu for copying lyrics
+function setupContextMenu() {
+    const contextMenu = document.getElementById('context-menu');
+    const copyBtn = document.getElementById('copy-lyrics-btn');
+
+    // Show context menu on right click anywhere in the window
+    window.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        
+        // Check if there are active lyrics to copy
+        const hasNoLyrics = parsedLyrics.length === 0 || 
+            (parsedLyrics.length === 1 && 
+             (parsedLyrics[0].text === "Lyrics not found for this track." || 
+              parsedLyrics[0].text === "Play a song on Spotify to view lyrics." || 
+              parsedLyrics[0].text.startsWith("Searching")));
+
+        if (hasNoLyrics) {
+            copyBtn.classList.add('disabled');
+            copyBtn.querySelector('span').innerText = 'No Lyrics to Copy';
+        } else {
+            copyBtn.classList.remove('disabled');
+            copyBtn.querySelector('span').innerText = 'Copy Lyrics';
+        }
+
+        // Position menu at cursor coordinates
+        contextMenu.style.left = `${e.clientX}px`;
+        contextMenu.style.top = `${e.clientY}px`;
+        contextMenu.style.display = 'block';
+    });
+
+    // Hide context menu on left click anywhere
+    window.addEventListener('click', (e) => {
+        if (e.target.closest('#copy-lyrics-btn')) return;
+        contextMenu.style.display = 'none';
+    });
+
+    // Copy lyrics button handler
+    copyBtn.addEventListener('click', async () => {
+        if (copyBtn.classList.contains('disabled')) return;
+        
+        try {
+            // Map text from lines and join with newline
+            const lyricsText = parsedLyrics.map(line => line.text).join('\n');
+            await Neutralino.os.setClipboard(lyricsText);
+            
+            // Show feedback
+            copyBtn.querySelector('span').innerText = 'Copied!';
+            copyBtn.style.color = '#1DB954';
+            
+            setTimeout(() => {
+                copyBtn.querySelector('span').innerText = 'Copy Lyrics';
+                copyBtn.style.color = '';
+                contextMenu.style.display = 'none';
+            }, 1000);
+        } catch (err) {
+            console.error('Failed to copy lyrics:', err);
+            contextMenu.style.display = 'none';
+        }
+    });
+}
+
+setupContextMenu();
 onStart();
