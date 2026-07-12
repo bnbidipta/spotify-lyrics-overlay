@@ -28,9 +28,11 @@ $cleanTrack = $cleanTrack.Trim()
 $cleanArtist = $artistName -replace "\s*(feat|with|featuring)\.?\s+.*", ""
 $cleanArtist = ($cleanArtist -split ",")[0].Trim()
 
+# Temporary store for plain lyrics fallback (we prefer synced if NetEase/Musixmatch has them)
+$plainFallback = $null
 
 # ------------------------------------------------------------
-# 1. Try Lrclib first on the backend (Bypasses browser CORS policy)
+# 1. Try Lrclib first (Primary)
 # ------------------------------------------------------------
 try {
     $trackEsc = [uri]::EscapeDataString($cleanTrack)
@@ -46,10 +48,7 @@ try {
             $Output | ConvertTo-Json -Compress
             exit
         } elseif ($response.plainLyrics) {
-            $Output.synced = $false
-            $Output.lyrics = $response.plainLyrics
-            $Output | ConvertTo-Json -Compress
-            exit
+            $plainFallback = $response.plainLyrics
         }
     }
 } catch {
@@ -58,7 +57,7 @@ try {
 
 
 # ------------------------------------------------------------
-# 2. Try NetEase Cloud Music (Secondary Fallback)
+# 2. Try NetEase Cloud Music (Secondary Fallback - Synced Only)
 # ------------------------------------------------------------
 try {
     $query = [uri]::EscapeDataString("$cleanArtist $cleanTrack")
@@ -87,7 +86,7 @@ try {
 
 
 # ------------------------------------------------------------
-# 3. Musixmatch Fallback (Tertiary Fallback)
+# 3. Musixmatch Fallback (Tertiary Fallback - Synced/Plain)
 # ------------------------------------------------------------
 try {
     $headers = @{
@@ -157,7 +156,7 @@ try {
                     exit
                 }
             }
-            elseif ($track.has_lyrics -eq 1) {
+            elseif ($track.has_lyrics -eq 1 -and -not $plainFallback) {
                 $lyricsUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.lyrics.get?track_id=$trackId&usertoken=$userToken&app_id=web-desktop-app-v1.0"
                 $lyricsResponse = Invoke-RestMethod -Uri $lyricsUri -Method Get -Headers $headers -WebSession $session
                 $lyricsBody = $lyricsResponse.message.body.lyrics.lyrics_body
@@ -165,10 +164,7 @@ try {
                 if ($lyricsBody) {
                     # Strip copyright warning footer
                     $lyricsBody = $lyricsBody -replace "\*\*\*\*\*\ *[\s\S]*", ""
-                    $Output.synced = $false
-                    $Output.lyrics = $lyricsBody.Trim()
-                    $Output | ConvertTo-Json -Compress
-                    exit
+                    $plainFallback = $lyricsBody.Trim()
                 }
             }
         }
@@ -182,17 +178,26 @@ try {
 # 4. Try Lyrics.ovh (Quaternary Fallback - Plain Lyrics)
 # ------------------------------------------------------------
 try {
-    $trackEsc = [uri]::EscapeDataString($cleanTrack)
-    $artistEsc = [uri]::EscapeDataString($cleanArtist)
-    $url = "https://api.lyrics.ovh/v1/$artistEsc/$trackEsc"
-    
-    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 5
-    if ($response -and $response.lyrics) {
-        $Output.synced = $false
-        $Output.lyrics = $response.lyrics
+    if (-not $plainFallback) {
+        $trackEsc = [uri]::EscapeDataString($cleanTrack)
+        $artistEsc = [uri]::EscapeDataString($cleanArtist)
+        $url = "https://api.lyrics.ovh/v1/$artistEsc/$trackEsc"
+        
+        $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 5
+        if ($response -and $response.lyrics) {
+            $plainFallback = $response.lyrics
+        }
     }
 } catch {
     # Fallback to default not found response
+}
+
+# ------------------------------------------------------------
+# Return Plain Text Fallback if no synced lyrics were resolved
+# ------------------------------------------------------------
+if ($plainFallback) {
+    $Output.synced = $false
+    $Output.lyrics = $plainFallback
 }
 
 # Output the final result as JSON
