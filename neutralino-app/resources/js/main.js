@@ -490,7 +490,7 @@ function setupContextMenu() {
         try {
             // Map text from lines and join with newline
             const lyricsText = parsedLyrics.map(line => line.text).join('\n');
-            await Neutralino.os.setClipboard(lyricsText);
+            await Neutralino.clipboard.writeText(lyricsText);
             
             // Show feedback
             copyBtn.querySelector('span').innerText = 'Copied!';
