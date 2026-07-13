@@ -135,9 +135,8 @@ async function performLogin() {
     loginBtn.innerText = 'Logging in...';
 
     try {
-        // 1. Run PowerShell listener
-        // The script blocks until it receives the Spotify redirect callback
-        const listenerCommand = 'powershell -ExecutionPolicy Bypass -File auth_listener.ps1';
+        // 1. Run PowerShell listener with absolute path and NoProfile optimization
+        const listenerCommand = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/auth_listener.ps1"`;
         
         // 2. Open Spotify Auth page in default system browser
         const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyClientId}&redirect_uri=http://127.0.0.1:8888/callback&response_type=code&scope=user-read-currently-playing&show_dialog=true`;
@@ -148,10 +147,15 @@ async function performLogin() {
         if (result.stdOut) {
             const code = result.stdOut.trim();
             if (code) {
-                // 4. Exchange code for Access Token
-                const token = await exchangeCodeForToken(code);
-                accessToken = token;
-                localStorage.setItem('spotify_access_token', token);
+                // 4. Exchange code for Access and Refresh Tokens
+                const tokenData = await exchangeCodeForToken(code);
+                accessToken = tokenData.access_token;
+                localStorage.setItem('spotify_access_token', tokenData.access_token);
+                localStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
+                
+                const expiresAt = Date.now() + (tokenData.expires_in || 3600) * 1000;
+                localStorage.setItem('spotify_token_expires_at', expiresAt.toString());
+
                 hideAuthRequired();
                 updateUI('Connecting to Spotify...', 'Successfully authenticated. Resolving playback...');
                 startPlaybackMonitoring();
@@ -171,16 +175,41 @@ async function performLogin() {
 
 // Exchange code using PowerShell RestMethod to bypass browser CORS
 async function exchangeCodeForToken(code) {
-    const exchangeCommand = `powershell -Command "Invoke-RestMethod -Uri 'https://accounts.spotify.com/api/token' -Method Post -Body @{ grant_type='authorization_code'; code='${code}'; redirect_uri='http://127.0.0.1:8888/callback'; client_id='${spotifyClientId}'; client_secret='${spotifyClientSecret}' } -ContentType 'application/x-www-form-urlencoded' | ConvertTo-Json"`;
+    const exchangeCommand = `powershell -NoProfile -NonInteractive -Command "Invoke-RestMethod -Uri 'https://accounts.spotify.com/api/token' -Method Post -Body @{ grant_type='authorization_code'; code='${code}'; redirect_uri='http://127.0.0.1:8888/callback'; client_id='${spotifyClientId}'; client_secret='${spotifyClientSecret}' } -ContentType 'application/x-www-form-urlencoded' | ConvertTo-Json"`;
     
     const result = await Neutralino.os.execCommand(exchangeCommand);
     if (result.stdOut) {
         const response = JSON.parse(result.stdOut);
         if (response && response.access_token) {
-            return response.access_token;
+            return response;
         }
     }
-    throw new Error(result.stdErr || 'Could not retrieve access token.');
+    throw new Error(result.stdErr || 'Could not retrieve tokens.');
+}
+
+// Silent Token Refresh using stored Refresh Token
+async function refreshSpotifyToken() {
+    const refreshToken = localStorage.getItem('spotify_refresh_token');
+    if (!refreshToken) throw new Error('No refresh token available');
+    
+    const refreshCommand = `powershell -NoProfile -NonInteractive -Command "Invoke-RestMethod -Uri 'https://accounts.spotify.com/api/token' -Method Post -Body @{ grant_type='refresh_token'; refresh_token='${refreshToken}'; client_id='${spotifyClientId}'; client_secret='${spotifyClientSecret}' } -ContentType 'application/x-www-form-urlencoded' | ConvertTo-Json"`;
+    
+    const result = await Neutralino.os.execCommand(refreshCommand);
+    if (result.stdOut) {
+        const response = JSON.parse(result.stdOut);
+        if (response && response.access_token) {
+            accessToken = response.access_token;
+            localStorage.setItem('spotify_access_token', accessToken);
+            if (response.refresh_token) {
+                localStorage.setItem('spotify_refresh_token', response.refresh_token);
+            }
+            const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
+            localStorage.setItem('spotify_token_expires_at', expiresAt.toString());
+            console.log('Spotify access token refreshed successfully.');
+            return accessToken;
+        }
+    }
+    throw new Error(result.stdErr || 'Could not refresh access token.');
 }
 
 // Monitoring Spotify Web API
@@ -208,13 +237,21 @@ function startPlaybackMonitoring() {
             }
 
             if (response.status === 401) {
-                // Token expired
-                accessToken = null;
-                localStorage.removeItem('spotify_access_token');
-                clearInterval(playbackPollInterval);
-                if (animationFrameId) cancelAnimationFrame(animationFrameId);
-                showAuthRequired();
-                return;
+                // Token expired - try silent refresh
+                try {
+                    await refreshSpotifyToken();
+                    return;
+                } catch (refreshErr) {
+                    console.error('Failed to silently refresh Spotify token:', refreshErr);
+                    accessToken = null;
+                    localStorage.removeItem('spotify_access_token');
+                    localStorage.removeItem('spotify_refresh_token');
+                    localStorage.removeItem('spotify_token_expires_at');
+                    clearInterval(playbackPollInterval);
+                    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                    showAuthRequired();
+                    return;
+                }
             }
 
             const data = await response.json();
@@ -239,12 +276,39 @@ function startPlaybackMonitoring() {
                 updateUI(songInfo, 'Searching for lyrics...');
                 lastActiveIndex = -1;
 
-                // Resolve lyrics from backend (Lrclib with Musixmatch fallback)
+                // 1. Try to load from localStorage cache first (0ms load time)
+                const cacheKey = `lyrics_cache_${trackId}`;
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    try {
+                        const result = JSON.parse(cached);
+                        parsedLyrics = result.lines;
+                        renderLyrics(parsedLyrics);
+                        updateUI(songInfo, null);
+                        console.log(`Lyrics resolved instantly from local cache for track: ${trackId}`);
+                        return;
+                    } catch (e) {
+                        console.error('Failed to parse cached lyrics:', e);
+                    }
+                }
+
+                // 2. Resolve lyrics from backend (Lrclib -> NetEase -> Musixmatch -> Lyrics.ovh)
                 const result = await fetchLyrics(track.name, track.artists[0].name);
 
                 parsedLyrics = result.lines;
                 renderLyrics(parsedLyrics);
                 updateUI(songInfo, null);
+
+                // Save to persistent cache (only if valid lyrics were returned)
+                const isErrorResult = result.lines.length === 0 || 
+                    (result.lines.length === 1 && result.lines[0].text === "Lyrics not found for this track.");
+                if (!isErrorResult) {
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify(result));
+                    } catch (e) {
+                        console.error('Failed to write to lyrics cache:', e);
+                    }
+                }
             }
         } catch (err) {
             console.error('Error during playback polling:', err);
@@ -252,14 +316,14 @@ function startPlaybackMonitoring() {
     }, 3000);
 }
 
-// Fetch lyrics from Lrclib (primary) or Musixmatch (fallback) via backend PowerShell script
+// Fetch lyrics via backend PowerShell script with NoProfile/NonInteractive performance optimization
 async function fetchLyrics(trackName, artistName) {
     try {
         // Escape double quotes for shell arguments
         const cleanTrack = trackName.replace(/"/g, '\\"');
         const cleanArtist = artistName.replace(/"/g, '\\"');
         
-        const command = `powershell -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" "${cleanTrack}" "${cleanArtist}"`;
+        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" "${cleanTrack}" "${cleanArtist}"`;
         const result = await Neutralino.os.execCommand(command);
         
         if (result.stdOut) {
@@ -435,10 +499,26 @@ async function onStart() {
         return;
     }
     
-    // Check if we have a persisted access token
+    // Check if we have persisted tokens
     const savedToken = localStorage.getItem('spotify_access_token');
-    if (savedToken) {
-        accessToken = savedToken;
+    const refreshToken = localStorage.getItem('spotify_refresh_token');
+    const expiresAt = parseInt(localStorage.getItem('spotify_token_expires_at') || '0');
+
+    if (savedToken && refreshToken) {
+        // If expired or expiring in less than 5 minutes, refresh silently on launch
+        if (Date.now() > expiresAt - 300000) {
+            try {
+                hideAuthRequired();
+                updateUI('Connecting to Spotify...', 'Refreshing session...');
+                await refreshSpotifyToken();
+            } catch (err) {
+                console.error('Failed to refresh Spotify token on startup:', err);
+                showAuthRequired();
+                return;
+            }
+        } else {
+            accessToken = savedToken;
+        }
         hideAuthRequired();
         updateUI('Connecting to Spotify...', 'Restoring session...');
         startPlaybackMonitoring();

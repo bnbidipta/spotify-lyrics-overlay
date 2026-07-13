@@ -8,8 +8,10 @@ $Output = @{
     lyrics = "Lyrics not found for this track."
 }
 
-# Global Query Cleaning to maximize match rates across all providers
-# 1. Clean track name: split on " - " (removes suffixes like "- Single Version")
+# Prepare search titles
+$originalTrack = $trackName.Trim()
+
+# Clean track name to extract the main title
 $cleanTrack = $trackName
 if ($cleanTrack -like "* - *") {
     $parts = $cleanTrack -split " - "
@@ -17,188 +19,221 @@ if ($cleanTrack -like "* - *") {
         $cleanTrack = $parts[0].Trim()
     }
 }
-# Strip feature brackets, remaster notations, and performance descriptors
 $cleanTrack = $cleanTrack -replace "\s*\((feat|with|featuring)\.?\s+[^)]+\)", ""
 $cleanTrack = $cleanTrack -replace "\s*\((Remastered|Deluxe|Expanded|Special|Anniversary)\s*[^)]*\)", ""
 $cleanTrack = $cleanTrack -replace "\s*-\s*(Remastered|Deluxe|Expanded|Special|Anniversary)\s*.*", ""
 $cleanTrack = $cleanTrack -replace "\s*\((Live|Acoustic|Radio Edit|Remix|Edit|Mix)\)", ""
 $cleanTrack = $cleanTrack.Trim()
 
-# 2. Clean artist name: strip multiple artists or features
+# Clean artist name
 $cleanArtist = $artistName -replace "\s*(feat|with|featuring)\.?\s+.*", ""
 $cleanArtist = ($cleanArtist -split ",")[0].Trim()
 
-# Temporary store for plain lyrics fallback (we prefer synced if NetEase/Musixmatch has them)
 $plainFallback = $null
 
-# ------------------------------------------------------------
-# 1. Try Lrclib first (Primary)
-# ------------------------------------------------------------
-try {
-    $trackEsc = [uri]::EscapeDataString($cleanTrack)
-    $artistEsc = [uri]::EscapeDataString($cleanArtist)
-    $url = "https://lrclib.net/api/get?artist_name=$artistEsc&track_name=$trackEsc"
-    
-    # 5-second timeout to prevent hanging if Lrclib is offline
-    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 5
-    if ($response) {
-        if ($response.syncedLyrics) {
-            $Output.synced = $true
-            $Output.lyrics = $response.syncedLyrics
-            $Output | ConvertTo-Json -Compress
-            exit
-        } elseif ($response.plainLyrics) {
-            $plainFallback = $response.plainLyrics
-        }
+# Helper function to query Lrclib
+function Get-LrclibLyrics([string]$track, [string]$artist) {
+    try {
+        $trackEsc = [uri]::EscapeDataString($track)
+        $artistEsc = [uri]::EscapeDataString($artist)
+        $url = "https://lrclib.net/api/get?artist_name=$artistEsc&track_name=$trackEsc"
+        
+        $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 2
+        return $response
+    } catch {
+        return $null
     }
-} catch {
-    # Proceed to NetEase if Lrclib fails
 }
 
-
-# ------------------------------------------------------------
-# 2. Try NetEase Cloud Music (Secondary Fallback - Synced Only)
-# ------------------------------------------------------------
-try {
-    $query = [uri]::EscapeDataString("$cleanArtist $cleanTrack")
-    $searchUrl = "https://music.163.com/api/search/get/web?s=$query&type=1&limit=5"
-    
-    $searchResponse = Invoke-RestMethod -Uri $searchUrl -Method Get -TimeoutSec 5
-    if ($searchResponse -and $searchResponse.result) {
-        $resultObj = ConvertFrom-Json $searchResponse.result
-        if ($resultObj.songs -and $resultObj.songs.Count -gt 0) {
-            $songId = $resultObj.songs[0].id
-            
-            $lyricUrl = "https://music.163.com/api/song/lyric?os=pc&id=$songId&lv=-1&kv=-1&tv=-1"
-            $lyricResponse = Invoke-RestMethod -Uri $lyricUrl -Method Get -TimeoutSec 5
-            
-            if ($lyricResponse -and $lyricResponse.lrc -and $lyricResponse.lrc.lyric) {
-                $Output.synced = $true
-                $Output.lyrics = $lyricResponse.lrc.lyric
-                $Output | ConvertTo-Json -Compress
-                exit
+# Helper function to query NetEase
+function Get-NetEaseLyrics([string]$track, [string]$artist) {
+    try {
+        $query = [uri]::EscapeDataString("$artist $track")
+        $searchUrl = "https://music.163.com/api/search/get/web?s=$query&type=1&limit=5"
+        
+        $searchResponse = Invoke-RestMethod -Uri $searchUrl -Method Get -TimeoutSec 2
+        if ($searchResponse -and $searchResponse.result) {
+            $resultObj = ConvertFrom-Json $searchResponse.result
+            if ($resultObj.songs -and $resultObj.songs.Count -gt 0) {
+                $songId = $resultObj.songs[0].id
+                $lyricUrl = "https://music.163.com/api/song/lyric?os=pc&id=$songId&lv=-1&kv=-1&tv=-1"
+                $lyricResponse = Invoke-RestMethod -Uri $lyricUrl -Method Get -TimeoutSec 2
+                if ($lyricResponse -and $lyricResponse.lrc -and $lyricResponse.lrc.lyric) {
+                    return $lyricResponse.lrc.lyric
+                }
             }
         }
-    }
-} catch {
-    # Proceed to Musixmatch if NetEase fails
+    } catch {}
+    return $null
 }
 
-
-# ------------------------------------------------------------
-# 3. Musixmatch Fallback (Tertiary Fallback - Synced/Plain)
-# ------------------------------------------------------------
-try {
-    $headers = @{
-        "User-Agent" = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Musixmatch/0.19.4 Chrome/58.0.3029.110 Electron/1.7.6 Safari/537.36"
-    }
-
-    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    $cookie1 = New-Object System.Net.Cookie("AWSELB", "0", "/", "apic-desktop.musixmatch.com")
-    $session.Cookies.Add($cookie1)
-    $cookie2 = New-Object System.Net.Cookie("AWSELBCORS", "0", "/", "apic-desktop.musixmatch.com")
-    $session.Cookies.Add($cookie2)
-
-    # Use cached token file to avoid rate limiting
-    $tokenFile = Join-Path $PSScriptRoot "musixmatch_token.txt"
-    $userToken = $null
-
-    if (Test-Path $tokenFile) {
-        try {
-            $userToken = (Get-Content -Path $tokenFile -Raw).Trim()
-        } catch {}
-    }
-
-    if (-not $userToken) {
-        $tokenUri = "https://apic-desktop.musixmatch.com/ws/1.1/token.get?app_id=web-desktop-app-v1.0&user_language=en"
-        $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method Get -Headers $headers -WebSession $session
-        $userToken = $tokenResponse.message.body.user_token
-        if ($userToken) {
-            $userToken | Out-File -FilePath $tokenFile -NoNewline -Encoding utf8
+# Helper function to query Musixmatch
+function Get-MusixmatchLyrics([string]$track, [string]$artist) {
+    try {
+        $headers = @{
+            "User-Agent" = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Musixmatch/0.19.4 Chrome/58.0.3029.110 Electron/1.7.6 Safari/537.36"
         }
-    }
+        $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+        $cookie1 = New-Object System.Net.Cookie("AWSELB", "0", "/", "apic-desktop.musixmatch.com")
+        $session.Cookies.Add($cookie1)
+        $cookie2 = New-Object System.Net.Cookie("AWSELBCORS", "0", "/", "apic-desktop.musixmatch.com")
+        $session.Cookies.Add($cookie2)
 
-    if ($userToken) {
-        $trackNameEsc = [uri]::EscapeDataString($cleanTrack)
-        $artistNameEsc = [uri]::EscapeDataString($cleanArtist)
-        $searchUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.search?q_track=$trackNameEsc&q_artist=$artistNameEsc&page_size=1&usertoken=$userToken&app_id=web-desktop-app-v1.0"
-        
-        $searchResponse = Invoke-RestMethod -Uri $searchUri -Method Get -Headers $headers -WebSession $session
-        
-        # Handle expired token (401)
-        if ($searchResponse.message.header.status_code -eq 401) {
-            Remove-Item $tokenFile -ErrorAction SilentlyContinue
+        $tokenFile = Join-Path $PSScriptRoot "musixmatch_token.txt"
+        $userToken = $null
+
+        if (Test-Path $tokenFile) {
+            try { $userToken = (Get-Content -Path $tokenFile -Raw).Trim() } catch {}
+        }
+
+        if (-not $userToken) {
             $tokenUri = "https://apic-desktop.musixmatch.com/ws/1.1/token.get?app_id=web-desktop-app-v1.0&user_language=en"
-            $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method Get -Headers $headers -WebSession $session
+            $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method Get -Headers $headers -WebSession $session -TimeoutSec 2
             $userToken = $tokenResponse.message.body.user_token
             if ($userToken) {
                 $userToken | Out-File -FilePath $tokenFile -NoNewline -Encoding utf8
-                $searchUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.search?q_track=$trackNameEsc&q_artist=$artistNameEsc&page_size=1&usertoken=$userToken&app_id=web-desktop-app-v1.0"
-                $searchResponse = Invoke-RestMethod -Uri $searchUri -Method Get -Headers $headers -WebSession $session
             }
         }
 
-        $trackList = $searchResponse.message.body.track_list
-
-        if ($trackList -and $trackList.Count -gt 0) {
-            $track = $trackList[0].track
-            $trackId = $track.track_id
-
-            if ($track.has_subtitles -eq 1) {
-                $subtitleUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.subtitle.get?track_id=$trackId&subtitle_format=lrc&usertoken=$userToken&app_id=web-desktop-app-v1.0"
-                $subResponse = Invoke-RestMethod -Uri $subtitleUri -Method Get -Headers $headers -WebSession $session
-                $subtitleBody = $subResponse.message.body.subtitle.subtitle_body
-                
-                if ($subtitleBody) {
-                    $Output.synced = $true
-                    $Output.lyrics = $subtitleBody
-                    $Output | ConvertTo-Json -Compress
-                    exit
+        if ($userToken) {
+            $trackEsc = [uri]::EscapeDataString($track)
+            $artistEsc = [uri]::EscapeDataString($artist)
+            $searchUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.search?q_track=$trackEsc&q_artist=$artistEsc&page_size=1&usertoken=$userToken&app_id=web-desktop-app-v1.0"
+            $searchResponse = Invoke-RestMethod -Uri $searchUri -Method Get -Headers $headers -WebSession $session -TimeoutSec 2
+            
+            if ($searchResponse.message.header.status_code -eq 401) {
+                Remove-Item $tokenFile -ErrorAction SilentlyContinue
+                $tokenUri = "https://apic-desktop.musixmatch.com/ws/1.1/token.get?app_id=web-desktop-app-v1.0&user_language=en"
+                $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method Get -Headers $headers -WebSession $session -TimeoutSec 2
+                $userToken = $tokenResponse.message.body.user_token
+                if ($userToken) {
+                    $userToken | Out-File -FilePath $tokenFile -NoNewline -Encoding utf8
+                    $searchUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.search?q_track=$trackEsc&q_artist=$artistEsc&page_size=1&usertoken=$userToken&app_id=web-desktop-app-v1.0"
+                    $searchResponse = Invoke-RestMethod -Uri $searchUri -Method Get -Headers $headers -WebSession $session -TimeoutSec 2
                 }
             }
-            elseif ($track.has_lyrics -eq 1 -and -not $plainFallback) {
-                $lyricsUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.lyrics.get?track_id=$trackId&usertoken=$userToken&app_id=web-desktop-app-v1.0"
-                $lyricsResponse = Invoke-RestMethod -Uri $lyricsUri -Method Get -Headers $headers -WebSession $session
-                $lyricsBody = $lyricsResponse.message.body.lyrics.lyrics_body
-                
-                if ($lyricsBody) {
-                    # Strip copyright warning footer
-                    $lyricsBody = $lyricsBody -replace "\*\*\*\*\*\ *[\s\S]*", ""
-                    $plainFallback = $lyricsBody.Trim()
+
+            $trackList = $searchResponse.message.body.track_list
+            if ($trackList -and $trackList.Count -gt 0) {
+                $foundTrack = $trackList[0].track
+                $trackId = $foundTrack.track_id
+
+                if ($foundTrack.has_subtitles -eq 1) {
+                    $subtitleUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.subtitle.get?track_id=$trackId&subtitle_format=lrc&usertoken=$userToken&app_id=web-desktop-app-v1.0"
+                    $subResponse = Invoke-RestMethod -Uri $subtitleUri -Method Get -Headers $headers -WebSession $session -TimeoutSec 2
+                    return @{ synced = $true; lyrics = $subResponse.message.body.subtitle.subtitle_body }
+                } elseif ($foundTrack.has_lyrics -eq 1) {
+                    $lyricsUri = "https://apic-desktop.musixmatch.com/ws/1.1/track.lyrics.get?track_id=$trackId&usertoken=$userToken&app_id=web-desktop-app-v1.0"
+                    $lyricsResponse = Invoke-RestMethod -Uri $lyricsUri -Method Get -Headers $headers -WebSession $session -TimeoutSec 2
+                    $body = $lyricsResponse.message.body.lyrics.lyrics_body
+                    if ($body) {
+                        $body = $body -replace "\*\*\*\*\*\ *[\s\S]*", ""
+                        return @{ synced = $false; lyrics = $body.Trim() }
+                    }
                 }
             }
         }
-    }
-} catch {
-    # Proceed to Lyrics.ovh if Musixmatch fails
+    } catch {}
+    return $null
 }
 
-
-# ------------------------------------------------------------
-# 4. Try Lyrics.ovh (Quaternary Fallback - Plain Lyrics)
-# ------------------------------------------------------------
-try {
-    if (-not $plainFallback) {
-        $trackEsc = [uri]::EscapeDataString($cleanTrack)
-        $artistEsc = [uri]::EscapeDataString($cleanArtist)
+# Helper function to query Lyrics.ovh
+function Get-LyricsOvh([string]$track, [string]$artist) {
+    try {
+        $trackEsc = [uri]::EscapeDataString($track)
+        $artistEsc = [uri]::EscapeDataString($artist)
         $url = "https://api.lyrics.ovh/v1/$artistEsc/$trackEsc"
-        
-        $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 5
+        $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 2
         if ($response -and $response.lyrics) {
-            $plainFallback = $response.lyrics
+            return $response.lyrics
         }
-    }
-} catch {
-    # Fallback to default not found response
+    } catch {}
+    return $null
 }
 
-# ------------------------------------------------------------
-# Return Plain Text Fallback if no synced lyrics were resolved
-# ------------------------------------------------------------
+# --- PASS 1: Exact Version Match ---
+if ($originalTrack -ne $cleanTrack) {
+    # Check Lrclib
+    $lrclibObj = Get-LrclibLyrics $originalTrack $cleanArtist
+    if ($lrclibObj) {
+        if ($lrclibObj.syncedLyrics) {
+            $Output.synced = $true
+            $Output.lyrics = $lrclibObj.syncedLyrics
+            $Output | ConvertTo-Json -Compress
+            exit
+        } elseif ($lrclibObj.plainLyrics) {
+            $plainFallback = $lrclibObj.plainLyrics
+        }
+    }
+
+    # Check NetEase
+    $neteaseLrc = Get-NetEaseLyrics $originalTrack $cleanArtist
+    if ($neteaseLrc) {
+        $Output.synced = $true
+        $Output.lyrics = $neteaseLrc
+        $Output | ConvertTo-Json -Compress
+        exit
+    }
+
+    # Check Musixmatch
+    $mmObj = Get-MusixmatchLyrics $originalTrack $cleanArtist
+    if ($mmObj) {
+        if ($mmObj.synced) {
+            $Output.synced = $true
+            $Output.lyrics = $mmObj.lyrics
+            $Output | ConvertTo-Json -Compress
+            exit
+        } elseif ($mmObj.lyrics -and -not $plainFallback) {
+            $plainFallback = $mmObj.lyrics
+        }
+    }
+}
+
+# --- PASS 2: Main Title Match (Irrespective of what is after the title) ---
+# Check Lrclib
+$lrclibObj = Get-LrclibLyrics $cleanTrack $cleanArtist
+if ($lrclibObj) {
+    if ($lrclibObj.syncedLyrics) {
+        $Output.synced = $true
+        $Output.lyrics = $lrclibObj.syncedLyrics
+        $Output | ConvertTo-Json -Compress
+        exit
+    } elseif ($lrclibObj.plainLyrics -and -not $plainFallback) {
+        $plainFallback = $lrclibObj.plainLyrics
+    }
+}
+
+# Check NetEase
+$neteaseLrc = Get-NetEaseLyrics $cleanTrack $cleanArtist
+if ($neteaseLrc) {
+    $Output.synced = $true
+    $Output.lyrics = $neteaseLrc
+    $Output | ConvertTo-Json -Compress
+    exit
+}
+
+# Check Musixmatch
+$mmObj = Get-MusixmatchLyrics $cleanTrack $cleanArtist
+if ($mmObj) {
+    if ($mmObj.synced) {
+        $Output.synced = $true
+        $Output.lyrics = $mmObj.lyrics
+        $Output | ConvertTo-Json -Compress
+        exit
+    } elseif ($mmObj.lyrics -and -not $plainFallback) {
+        $plainFallback = $mmObj.lyrics
+    }
+}
+
+# Check Lyrics.ovh as quaternary fallback
+if (-not $plainFallback) {
+    $plainFallback = Get-LyricsOvh $cleanTrack $cleanArtist
+}
+
+# Return plain fallback if available
 if ($plainFallback) {
     $Output.synced = $false
     $Output.lyrics = $plainFallback
 }
 
-# Output the final result as JSON
 $Output | ConvertTo-Json -Compress
