@@ -3,6 +3,14 @@ param(
     [string]$artistName
 )
 
+# Force stdout encoding to UTF-8 to support non-English characters
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+} catch [System.IO.IOException] {
+    # Ignore handle errors if running in non-interactive/headless shell environment
+}
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $Output = @{
     synced = $false
     lyrics = "Lyrics not found for this track."

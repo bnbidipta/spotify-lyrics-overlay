@@ -323,7 +323,7 @@ async function fetchLyrics(trackName, artistName) {
         const cleanTrack = trackName.replace(/"/g, '\\"');
         const cleanArtist = artistName.replace(/"/g, '\\"');
         
-        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" "${cleanTrack}" "${cleanArtist}"`;
+        const command = `chcp 65001 >nul && powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" "${cleanTrack}" "${cleanArtist}"`;
         const result = await Neutralino.os.execCommand(command);
         
         if (result.stdOut) {
