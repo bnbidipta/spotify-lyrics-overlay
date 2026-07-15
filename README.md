@@ -1,17 +1,29 @@
 # Spotify Lyrics Overlay
 
-An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Spotify on Windows. Built using **Neutralinojs**, it leverages your system's native Edge/WebView2 rendering engine to display stunning glassmorphic, Apple Music-style synchronized scrolling lyrics at a tiny size of **under 2 Megabytes** (a 98% reduction from its original 91.6MB Electron implementation).
+An ultra-lightweight, highly customizable, and responsive desktop lyrics overlay for Spotify on Windows. Built using **Neutralinojs**, it leverages your system's native Edge/WebView2 rendering engine to display stunning glassmorphic, Apple Music-style synchronized scrolling lyrics at a tiny size of **under 2 Megabytes** (a 98% reduction from its original 91.6MB Electron implementation).
 
 <p align="center">
   <img src="neutralino-app/resources/icons/appIcon.png" width="128" height="128" alt="Spotify Lyrics Overlay App Icon" />
 </p>
 
+## 🖼️ Feature Showcases (GIF Placeholders)
+
+### 1. Apple Music-Style Karaoke (Word-by-Word Highlight)
+Individual lyric words are parsed dynamically using enhanced LRC timestamp tags and illuminated in real-time as the song plays.
 <p align="center">
-  <img src="demo.gif" width="450" alt="Spotify Lyrics Overlay Synced Scroll Demo" />
+  <img src="demo_karaoke.gif" width="450" alt="[PLACEHOLDER: Add demo_karaoke.gif showing word-by-word active text highlights]" />
 </p>
 
+### 2. Multi-Lingual Translation & Hindi Transliteration
+Click the translation button (`文`) to dynamically translate foreign lyrics to English on the fly. Devanagari Hindi text automatically displays Roman transliterations alongside translations.
 <p align="center">
-  <img src="preview.png" width="350" alt="Spotify Lyrics Overlay Preview" />
+  <img src="demo_translation.gif" width="450" alt="[PLACEHOLDER: Add demo_translation.gif showing Japanese/Hindi translations and Roman script transliterations]" />
+</p>
+
+### 3. Integrated Media Player Header & Controls
+Hover over the overlay to reveal the mini album art thumbnail, title, real-time smooth progress bar, and playback control buttons (`⏮️`, `⏸️/▶️`, `⏭️`, `🖤/💚`).
+<p align="center">
+  <img src="demo_controls.gif" width="450" alt="[PLACEHOLDER: Add demo_controls.gif showing clicking play/pause, liking songs, and watching the progress bar fill up]" />
 </p>
 
 ---
