@@ -25,6 +25,11 @@ jobs:
           cd neutralino-app
           npm install
 
+      - name: Download Neutralino.js & Binaries
+        run: |
+          cd neutralino-app
+          npx @neutralinojs/neu update
+
       - name: Build Application
         run: |
           cd neutralino-app
