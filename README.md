@@ -24,10 +24,9 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 
 1. Download the latest release `.zip` from the [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases) page.
 2. Extract the folder.
-3. Make sure you have a `.env` file in the folder with your Spotify Developer credentials:
+3. Make sure you have a `.env` file in the folder with your Spotify Developer Client ID (no client secret is needed under the secure PKCE flow):
    ```env
    SPOTIFY_CLIENT_ID=your_spotify_client_id
-   SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
    ```
 4. Double-click **`spotify-lyrics-overlay.exe`** to launch the overlay.
 5. Click **Login to Spotify** (this launches your browser to verify your account).

@@ -8,6 +8,11 @@ try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 } catch [System.IO.IOException] {}
 
+if ($Port -lt 1024 -or $Port -gt 65535) {
+    @{ error = "Invalid port number: $Port. Must be between 1024 and 65535." } | ConvertTo-Json -Compress
+    exit
+}
+
 $listener = $null
 $code = $null
 $returnedState = $null

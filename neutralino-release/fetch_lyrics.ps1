@@ -1,5 +1,5 @@
 param(
-    [string]$encodedArgs
+    [Parameter(Mandatory)][string]$EncodedArgs
 )
 
 # Force stdout encoding to UTF-8 to support non-English characters
@@ -15,42 +15,36 @@ $Output = @{
 
 # Parse JSON arguments securely from Base64
 try {
-    $argBytes = [System.Convert]::FromBase64String($encodedArgs)
+    $argBytes = [System.Convert]::FromBase64String($EncodedArgs)
     $argStr = [System.Text.Encoding]::UTF8.GetString($argBytes)
     $argsObj = ConvertFrom-Json $argStr
     
-    # Cap track and artist names at 200 characters to prevent memory DoS
-    $trackName = $argsObj.track.Substring(0, [Math]::Min(200, $argsObj.track.Length))
-    $artistName = $argsObj.artist.Substring(0, [Math]::Min(200, $argsObj.artist.Length))
+    $track = $argsObj.track
+    if ($track.Length -gt 200) { $track = $track.Substring(0, 200) }
+    $artist = $argsObj.artist
+    if ($artist.Length -gt 200) { $artist = $artist.Substring(0, 200) }
 } catch {
     $Output | ConvertTo-Json -Compress
     exit
 }
 
-if (-not $trackName -or -not $artistName) {
+if (-not $track -or -not $artist) {
     $Output | ConvertTo-Json -Compress
     exit
 }
 
 # Prepare search titles
-$originalTrack = $trackName.Trim()
+$originalTrack = $track.Trim()
 
-# Clean track name to extract the main title
-$cleanTrack = $trackName
-if ($cleanTrack -like "* - *") {
-    $parts = $cleanTrack -split " - "
-    if ($parts[0].Trim()) {
-        $cleanTrack = $parts[0].Trim()
-    }
-}
-$cleanTrack = $cleanTrack -replace "\s*\((feat|with|featuring)\.?\s+[^)]+\)", ""
-$cleanTrack = $cleanTrack -replace "\s*\((Remastered|Deluxe|Expanded|Special|Anniversary)\s*[^)]*\)", ""
-$cleanTrack = $cleanTrack -replace "\s*-\s*(Remastered|Deluxe|Expanded|Special|Anniversary)\s*.*", ""
-$cleanTrack = $cleanTrack -replace "\s*\((Live|Acoustic|Radio Edit|Remix|Edit|Mix)\)", ""
+# Suffix cleaning regex matching suffixes strictly at the end of the string
+$cleanTrack = $track
+$cleanTrack = $cleanTrack -replace "\s*\((feat|with|featuring)\.?\s+[^)]+\)$", ""
+$cleanTrack = $cleanTrack -replace "\s*\((Remastered|Deluxe|Expanded|Special|Anniversary|Live|Acoustic|Radio Edit|Remix|Edit|Mix)\s*[^)]*\)$", ""
+$cleanTrack = $cleanTrack -replace "\s*-\s*(Remastered|Deluxe|Expanded|Special|Anniversary|Live|Acoustic|Radio Edit|Remix|Edit|Mix|feat|with|featuring)\s*.*$", ""
 $cleanTrack = $cleanTrack.Trim()
 
 # Clean artist name
-$cleanArtist = $artistName -replace "\s*(feat|with|featuring)\.?\s+.*", ""
+$cleanArtist = $artist -replace "\s*(feat|with|featuring)\.?\s+.*$", ""
 $cleanArtist = ($cleanArtist -split ",")[0].Trim()
 
 $plainFallback = $null
@@ -63,7 +57,7 @@ $globalHeaders = @{
 # Helper function to validate response payload size
 function IsPayloadValid([string]$payload) {
     if (-not $payload) { return $false }
-    # Reject files larger than 100KB to prevent memory exhaustion
+    # Reject files larger than 100KB to prevent memory exhaustion DoS
     if ($payload.Length -gt 100000) { return $false }
     return $true
 }
@@ -122,8 +116,8 @@ function Get-MusixmatchLyrics([string]$track, [string]$artist) {
         $cookie2 = New-Object System.Net.Cookie("AWSELBCORS", "0", "/", "apic-desktop.musixmatch.com")
         $session.Cookies.Add($cookie2)
 
-        # Write to secure writeable app data folder to prevent silent write failures in Program Files
-        $appDataFolder = Join-Path $env:LOCALAPPDATA "SpotifyLyricsOverlay"
+        # Write to secure writeable APPDATA folder to prevent permissions failures in Program Files
+        $appDataFolder = Join-Path $env:APPDATA "SpotifyLyricsOverlay"
         if (-not (Test-Path $appDataFolder)) {
             New-Item -ItemType Directory -Path $appDataFolder -Force | Out-Null
         }
