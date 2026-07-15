@@ -274,7 +274,7 @@ async function fetchLyrics(trackName, artistName) {
 function parseSyncedLyrics(syncedLyrics) {
     const lines = syncedLyrics.split('\n');
     const parsed = [];
-    const regex = /^\[(\d+):(\d+)(?:\.(\d+))?\]\s*(.*)$/;
+    const regex = /^\[(\d+):(\d+)(?:[\.:](\d+))?\]\s*(.*)$/;
     for (let line of lines) {
         const match = line.match(regex);
         if (match) {
@@ -316,14 +316,12 @@ function startLyricsSyncLoop() {
     animationFrameId = requestAnimationFrame(update);
 }
 function highlightActiveLyric(currentProgress) {
-    // Binary search for active index - O(log n)
-    let low=0, high=parsedLyrics.length-1, activeIndex=-1;
-    while(low<=high){
-        const mid = Math.floor((low+high)/2);
-        const t = parsedLyrics[mid].time;
-        if (t===-1) { low=mid+1; continue; }
-        if (t <= currentProgress) { activeIndex=mid; low=mid+1; }
-        else { high=mid-1; }
+    let activeIndex = -1;
+    for (let i = 0; i < parsedLyrics.length; i++) {
+        const t = parsedLyrics[i].time;
+        if (t !== -1 && t <= currentProgress) {
+            activeIndex = i;
+        }
     }
     if (activeIndex!==-1 && activeIndex!==lastActiveIndex) {
         if (lastActiveIndex!==-1) {

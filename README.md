@@ -6,9 +6,13 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
   <img src="neutralino-app/resources/icons/appIcon.png" width="128" height="128" alt="Spotify Lyrics Overlay App Icon" />
 </p>
 
+<p align="center">
+  <img src="preview.png" width="350" alt="Spotify Lyrics Overlay Preview" />
+</p>
+
 ## Features
 
-- **Apple Music-Style Synced Scrolling**: Real-time sync loop (`requestAnimationFrame`) utilizing binary search (`O(log n)`) to scroll the active lyrics line smoothly with zero CPU overhead.
+- **Apple Music-Style Synced Scrolling**: Real-time sync loop (`requestAnimationFrame`) utilizing a robust timing scan to scroll the active lyrics line smoothly with zero CPU overhead.
 - **RCE-Safe Base64 Command Parsing**: Calls local helper scripts via Base64-JSON encoded arguments. This seals command parameter injection vulnerabilities from song metadata or redirect URLs.
 - **Client-Side PKCE OAuth Flow**: Complete elimination of client secrets (`SPOTIFY_CLIENT_SECRET`). Uses browser-based PKCE (Proof Key for Code Exchange) flow directly over `fetch`, making credentials sharing obsolete.
 - **CSRF Protection & Port Security**: Standard loopback address (`http://127.0.0.1:8888/callback`) with state verification matching UUID keys to block Cross-Site Request Forgery (CSRF).
