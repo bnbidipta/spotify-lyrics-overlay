@@ -201,7 +201,7 @@ async function enableClickThrough() {
     isClickThrough = true;
     updateLockButton();
     try {
-        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/window_utils.ps1" -Action enable-clickthrough`;
+        const command = `"${window.NL_PATH}/window_utils.exe" -Action enable-clickthrough`;
         await Neutralino.os.execCommand(command);
     } catch (e) {
         console.error("Failed to enable clickthrough", e);
@@ -212,7 +212,7 @@ async function disableClickThrough() {
     isClickThrough = false;
     updateLockButton();
     try {
-        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/window_utils.ps1" -Action disable-clickthrough`;
+        const command = `"${window.NL_PATH}/window_utils.exe" -Action disable-clickthrough`;
         await Neutralino.os.execCommand(command);
     } catch (e) {
         console.error("Failed to disable clickthrough", e);
@@ -598,7 +598,7 @@ async function performLogin() {
         await Neutralino.os.open(authUrl);
 
         // Secure: port and state are validated ints/UUIDs, no user input
-        const listenerCommand = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/auth_listener.ps1" -Port ${port} -ExpectedState ${state}`;
+        const listenerCommand = `"${window.NL_PATH}/auth_listener.exe" -Port ${port} -ExpectedState ${state}`;
         const result = await Neutralino.os.execCommand(listenerCommand);
         if (!result.stdOut) throw new Error(result.stdErr || 'No code returned');
 
@@ -750,7 +750,7 @@ async function fetchLyrics(trackName, artistName) {
             artist: artistName.substring(0,200),
             providers: currentConfig.provider_order
         }));
-        const command = `chcp 65001 >nul && powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" -EncodedArgs ${payload}`;
+        const command = `chcp 65001 >nul && "${window.NL_PATH}/fetch_lyrics.exe" -EncodedArgs ${payload}`;
         const result = await Neutralino.os.execCommand(command);
         if (!result.stdOut) throw new Error('Empty lyrics response');
         let data;

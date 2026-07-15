@@ -14,9 +14,10 @@ PrivilegesRequired=lowest
 [Files]
 Source: "neutralino-release\spotify-lyrics-overlay.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "neutralino-release\resources.neu"; DestDir: "{app}"; Flags: ignoreversion
-Source: "neutralino-release\auth_listener.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "neutralino-release\fetch_lyrics.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "neutralino-release\secure_store.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "neutralino-release\auth_listener.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "neutralino-release\fetch_lyrics.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "neutralino-release\secure_store.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "neutralino-release\window_utils.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Spotify Lyrics Overlay"; Filename: "{app}\spotify-lyrics-overlay.exe"

@@ -35,14 +35,22 @@ jobs:
           cd neutralino-app
           npx @neutralinojs/neu build
 
+      - name: Compile C# Helpers
+        run: |
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:neutralino-app\auth_listener.exe neutralino-app\auth_listener.cs
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:neutralino-app\window_utils.exe neutralino-app\window_utils.cs
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /r:System.Security.dll /out:neutralino-app\secure_store.exe neutralino-app\secure_store.cs
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /r:System.Web.Extensions.dll /out:neutralino-app\fetch_lyrics.exe neutralino-app\fetch_lyrics.cs
+
       - name: Create Release Structure
         run: |
           mkdir dist_release
           copy neutralino-app\dist\spotify-lyrics-overlay\spotify-lyrics-overlay-win_x64.exe dist_release\spotify-lyrics-overlay.exe
           copy neutralino-app\dist\spotify-lyrics-overlay\resources.neu dist_release\resources.neu
-          copy neutralino-app\auth_listener.ps1 dist_release\auth_listener.ps1
-          copy neutralino-app\fetch_lyrics.ps1 dist_release\fetch_lyrics.ps1
-          copy neutralino-app\secure_store.ps1 dist_release\secure_store.ps1
+          copy neutralino-app\auth_listener.exe dist_release\auth_listener.exe
+          copy neutralino-app\fetch_lyrics.exe dist_release\fetch_lyrics.exe
+          copy neutralino-app\secure_store.exe dist_release\secure_store.exe
+          copy neutralino-app\window_utils.exe dist_release\window_utils.exe
 
       - name: Compress Release Archive
         run: |

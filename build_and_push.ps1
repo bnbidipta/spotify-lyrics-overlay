@@ -7,12 +7,19 @@ Set-Location -Path "neutralino-app"
 npx @neutralinojs/neu build
 Set-Location -Path ".."
 
-# 2. Copy compiled assets to release folder
+# 2. Compile C# helper files locally
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:neutralino-app\auth_listener.exe neutralino-app\auth_listener.cs
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:neutralino-app\window_utils.exe neutralino-app\window_utils.cs
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /r:System.Security.dll /out:neutralino-app\secure_store.exe neutralino-app\secure_store.cs
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /r:System.Web.Extensions.dll /out:neutralino-app\fetch_lyrics.exe neutralino-app\fetch_lyrics.cs
+
+# 3. Copy compiled assets to release folder
 Copy-Item "neutralino-app\dist\spotify-lyrics-overlay\resources.neu" "neutralino-release\resources.neu" -Force
 Copy-Item "neutralino-app\dist\spotify-lyrics-overlay\spotify-lyrics-overlay-win_x64.exe" "neutralino-release\spotify-lyrics-overlay.exe" -Force
-Copy-Item "neutralino-app\auth_listener.ps1" "neutralino-release\auth_listener.ps1" -Force
-Copy-Item "neutralino-app\fetch_lyrics.ps1" "neutralino-release\fetch_lyrics.ps1" -Force
-Copy-Item "neutralino-app\secure_store.ps1" "neutralino-release\secure_store.ps1" -Force
+Copy-Item "neutralino-app\auth_listener.exe" "neutralino-release\auth_listener.exe" -Force
+Copy-Item "neutralino-app\fetch_lyrics.exe" "neutralino-release\fetch_lyrics.exe" -Force
+Copy-Item "neutralino-app\secure_store.exe" "neutralino-release\secure_store.exe" -Force
+Copy-Item "neutralino-app\window_utils.exe" "neutralino-release\window_utils.exe" -Force
 
 # 3. Create zip file
 Remove-Item "spotify-lyrics-overlay-win-x64-*.zip" -Force -ErrorAction SilentlyContinue
