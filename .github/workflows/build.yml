@@ -44,7 +44,7 @@ jobs:
           powershell -Command "Compress-Archive -Path dist_release\* -DestinationPath spotify-lyrics-overlay-windows.zip -Force"
 
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: spotify-lyrics-overlay-windows
           path: spotify-lyrics-overlay-windows.zip

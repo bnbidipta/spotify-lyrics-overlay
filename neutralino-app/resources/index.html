@@ -13,6 +13,25 @@
         <!-- Drag handle -->
         <div id="drag-handle">Spotify Lyrics</div>
         
+        <!-- Controls bar (Always on top, Click-through, Settings) -->
+        <div id="controls-bar">
+            <button id="pin-btn" class="control-btn" title="Pin Window (Always on Top)">📌</button>
+            <button id="lock-btn" class="control-btn" title="Lock Window (Click-Through)">🔓</button>
+            <button id="settings-btn" class="control-btn" title="Window Settings">⚙️</button>
+        </div>
+        
+        <!-- Settings Panel -->
+        <div id="settings-panel" style="display: none;">
+            <div class="slider-group">
+                <label>Opacity: <span id="opacity-val">80%</span></label>
+                <input type="range" id="opacity-slider" min="10" max="100" value="80">
+            </div>
+            <div class="slider-group">
+                <label>Blur: <span id="blur-val">12px</span></label>
+                <input type="range" id="blur-slider" min="0" max="25" value="12">
+            </div>
+        </div>
+        
         <!-- Close button for frameless window -->
         <button id="close-btn" title="Close Overlay">&times;</button>
         

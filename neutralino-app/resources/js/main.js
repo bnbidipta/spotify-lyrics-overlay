@@ -32,6 +32,20 @@ const closeBtn = document.getElementById('close-btn');
 const getIdBtn = document.getElementById('get-id-btn');
 const watchLoomBtn = document.getElementById('watch-loom-btn');
 
+// Window controls
+const pinBtn = document.getElementById('pin-btn');
+const lockBtn = document.getElementById('lock-btn');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsPanel = document.getElementById('settings-panel');
+const opacitySlider = document.getElementById('opacity-slider');
+const opacityVal = document.getElementById('opacity-val');
+const blurSlider = document.getElementById('blur-slider');
+const blurVal = document.getElementById('blur-val');
+const lyricsContainer = document.getElementById('lyrics-container');
+
+let isAlwaysOnTop = true;
+let isClickThrough = false;
+
 Neutralino.init();
 Neutralino.window.setDraggableRegion('drag-handle');
 
@@ -39,6 +53,10 @@ closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 loginBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (getIdBtn) getIdBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (watchLoomBtn) watchLoomBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+if (pinBtn) pinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+if (lockBtn) lockBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+if (settingsBtn) settingsBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+if (settingsPanel) settingsPanel.addEventListener('mousedown', (e) => e.stopPropagation());
 
 async function saveWindowGeometry() {
     try {
@@ -73,8 +91,13 @@ async function handleExit() {
     try { await saveWindowGeometry(); } catch (e) {}
     Neutralino.app.exit();
 }
-closeBtn.addEventListener('click', handleExit);
-Neutralino.events.on('windowClose', handleExit);
+
+async function handleCloseButton() {
+    // Hide window (minimize to tray)
+    await Neutralino.window.hide();
+}
+closeBtn.addEventListener('click', handleCloseButton);
+Neutralino.events.on('windowClose', handleCloseButton);
 
 if (getIdBtn) {
     getIdBtn.addEventListener('click', () => {
@@ -85,6 +108,187 @@ if (watchLoomBtn) {
     watchLoomBtn.addEventListener('click', () => {
         Neutralino.os.open('https://www.loom.com/share/placeholder');
     });
+}
+
+// Opacity & Blur Slider Logic
+function applyOpacity(val) {
+    if (!lyricsContainer) return;
+    lyricsContainer.style.opacity = val / 100;
+    if (opacityVal) opacityVal.innerText = `${val}%`;
+    localStorage.setItem('window_opacity', val);
+}
+
+function applyBlur(val) {
+    if (!lyricsContainer) return;
+    lyricsContainer.style.backdropFilter = `blur(${val}px)`;
+    lyricsContainer.style.webkitBackdropFilter = `blur(${val}px)`;
+    if (blurVal) blurVal.innerText = `${val}px`;
+    localStorage.setItem('window_blur', val);
+}
+
+if (opacitySlider) {
+    opacitySlider.addEventListener('input', (e) => applyOpacity(e.target.value));
+}
+if (blurSlider) {
+    blurSlider.addEventListener('input', (e) => applyBlur(e.target.value));
+}
+
+// Button controls UI updates & toggle handlers
+function updatePinButton() {
+    if (!pinBtn) return;
+    if (isAlwaysOnTop) {
+        pinBtn.classList.add('active');
+        pinBtn.innerText = '📌';
+        pinBtn.title = 'Unpin Window (Always on Top: ON)';
+    } else {
+        pinBtn.classList.remove('active');
+        pinBtn.innerText = '📍';
+        pinBtn.title = 'Pin Window (Always on Top: OFF)';
+    }
+}
+
+function updateLockButton() {
+    if (!lockBtn) return;
+    if (isClickThrough) {
+        lockBtn.classList.add('active');
+        lockBtn.innerText = '🔒';
+        lockBtn.title = 'Unlock Window (Click-Through: ON)';
+    } else {
+        lockBtn.classList.remove('active');
+        lockBtn.innerText = '🔓';
+        lockBtn.title = 'Lock Window (Click-Through: OFF)';
+    }
+}
+
+async function enableClickThrough() {
+    isClickThrough = true;
+    updateLockButton();
+    try {
+        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/window_utils.ps1" -Action enable-clickthrough`;
+        await Neutralino.os.execCommand(command);
+    } catch (e) {
+        console.error("Failed to enable clickthrough", e);
+    }
+}
+
+async function disableClickThrough() {
+    isClickThrough = false;
+    updateLockButton();
+    try {
+        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/window_utils.ps1" -Action disable-clickthrough`;
+        await Neutralino.os.execCommand(command);
+    } catch (e) {
+        console.error("Failed to disable clickthrough", e);
+    }
+}
+
+if (pinBtn) {
+    pinBtn.addEventListener('click', async () => {
+        isAlwaysOnTop = !isAlwaysOnTop;
+        await Neutralino.window.setAlwaysOnTop(isAlwaysOnTop);
+        localStorage.setItem('always_on_top', isAlwaysOnTop.toString());
+        updatePinButton();
+    });
+}
+
+if (lockBtn) {
+    lockBtn.addEventListener('click', async () => {
+        if (!isClickThrough) {
+            await enableClickThrough();
+            alert("Click-Through locked! All mouse clicks will now pass through the window to applications underneath.\n\nTo unlock, right-click the system tray icon and select 'Unlock Window'.");
+        } else {
+            await disableClickThrough();
+        }
+    });
+}
+
+if (settingsBtn && settingsPanel) {
+    settingsBtn.addEventListener('click', () => {
+        if (settingsPanel.style.display === 'none') {
+            settingsPanel.style.display = 'flex';
+            settingsBtn.classList.add('active');
+        } else {
+            settingsPanel.style.display = 'none';
+            settingsBtn.classList.remove('active');
+        }
+    });
+}
+
+// System Tray Logic
+async function setupSystemTray() {
+    if (window.NL_MODE !== 'window') return;
+    try {
+        const tray = {
+            icon: "/resources/icons/trayIcon.png",
+            menuItems: [
+                { id: "SHOW", text: "Show Overlay" },
+                { id: "HIDE", text: "Hide Overlay" },
+                { id: "SEP1", text: "-" },
+                { id: "PIN", text: "Pin Window (Always on Top)" },
+                { id: "UNPIN", text: "Unpin Window" },
+                { id: "SEP2", text: "-" },
+                { id: "LOCK", text: "Lock Window (Click-Through)" },
+                { id: "UNLOCK", text: "Unlock Window" },
+                { id: "SEP3", text: "-" },
+                { id: "QUIT", text: "Quit App" }
+            ]
+        };
+        await Neutralino.os.setTray(tray);
+    } catch (e) {
+        console.error("Failed to setup system tray", e);
+    }
+}
+
+Neutralino.events.on("trayMenuItemClicked", async (event) => {
+    switch (event.detail.id) {
+        case "SHOW":
+            await Neutralino.window.show();
+            break;
+        case "HIDE":
+            await Neutralino.window.hide();
+            break;
+        case "PIN":
+            isAlwaysOnTop = true;
+            await Neutralino.window.setAlwaysOnTop(true);
+            localStorage.setItem('always_on_top', 'true');
+            updatePinButton();
+            break;
+        case "UNPIN":
+            isAlwaysOnTop = false;
+            await Neutralino.window.setAlwaysOnTop(false);
+            localStorage.setItem('always_on_top', 'false');
+            updatePinButton();
+            break;
+        case "LOCK":
+            await enableClickThrough();
+            break;
+        case "UNLOCK":
+            await disableClickThrough();
+            break;
+        case "QUIT":
+            await handleExit();
+            break;
+    }
+});
+
+setupSystemTray();
+
+function restoreSettings() {
+    const savedPin = localStorage.getItem('always_on_top');
+    if (savedPin !== null) {
+        isAlwaysOnTop = (savedPin === 'true');
+        Neutralino.window.setAlwaysOnTop(isAlwaysOnTop);
+    }
+    updatePinButton();
+    updateLockButton();
+
+    const savedOpacity = localStorage.getItem('window_opacity') || '80';
+    if (opacitySlider) opacitySlider.value = savedOpacity;
+    applyOpacity(savedOpacity);
+
+    const savedBlur = localStorage.getItem('window_blur') || '12';
+    if (blurSlider) blurSlider.value = savedBlur;
+    applyBlur(savedBlur);
 }
 
 // --- Secure helpers ---
@@ -419,6 +623,7 @@ window.addEventListener('blur', stopResizing);
 
 async function onStart() {
     await restoreWindowGeometry();
+    restoreSettings();
     await loadEnv();
     if (!spotifyClientId) {
         if (setupSection) setupSection.style.display = 'flex';

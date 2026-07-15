@@ -263,3 +263,92 @@ html, body {
 .link-btn:hover {
     color: #1ed760;
 }
+
+/* Controls Bar */
+#controls-bar {
+    position: absolute;
+    top: 6px;
+    left: 12px;
+    display: flex;
+    gap: 8px;
+    z-index: 1000;
+}
+
+.control-btn {
+    background: transparent;
+    border: none;
+    font-size: 13px;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.2s, transform 0.1s;
+    padding: 2px;
+}
+
+.control-btn:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+.control-btn.active {
+    opacity: 1;
+    text-shadow: 0 0 8px rgba(29, 185, 84, 0.6);
+}
+
+/* Settings Panel */
+#settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(30, 30, 30, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 8px 12px;
+    width: 90%;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+    backdrop-filter: blur(8px);
+    animation: slideDown 0.2s ease-out;
+}
+
+.slider-group {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.slider-group label {
+    flex: 1;
+    text-align: left;
+}
+
+.slider-group input[type="range"] {
+    flex: 2;
+    margin-left: 10px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.slider-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #1DB954;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+    transition: background 0.2s;
+}
+
+.slider-group input[type="range"]::-webkit-slider-thumb:hover {
+    background: #1ed760;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}

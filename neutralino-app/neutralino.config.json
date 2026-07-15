@@ -41,7 +41,7 @@
       "hidden": false,
       "resizable": true,
       "transparent": true,
-      "exitProcessOnClose": true
+      "exitProcessOnClose": false
     },
     "browser": {
       "globalVariables": {
