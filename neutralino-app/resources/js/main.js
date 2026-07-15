@@ -196,11 +196,12 @@ async function performLogin() {
         localStorage.setItem('spotify_code_verifier', verifier);
         localStorage.setItem('spotify_auth_state', state);
 
-        // 2. Run PowerShell listener with absolute path and 30s timeout
-        const listenerCommand = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/auth_listener.ps1"`;
+        // 2. Run PowerShell listener on whitelisted redirect port 8888
+        const port = 8888;
+        const listenerCommand = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/auth_listener.ps1" -Port ${port} -ExpectedState "${state}"`;
         
         // 3. Open Spotify Auth page in default system browser
-        const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyClientId}&redirect_uri=http://127.0.0.1:8888/callback&response_type=code&scope=user-read-currently-playing&code_challenge_method=S256&code_challenge=${challenge}&state=${state}&show_dialog=true`;
+        const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyClientId}&redirect_uri=http://127.0.0.1:${port}/callback&response_type=code&scope=user-read-currently-playing&code_challenge_method=S256&code_challenge=${challenge}&state=${state}&show_dialog=true`;
         await Neutralino.os.open(authUrl);
 
         // 4. Await PowerShell command result
@@ -214,9 +215,6 @@ async function performLogin() {
             }
 
             if (parsedResult.error) {
-                if (parsedResult.error === "TIMEOUT") {
-                    throw new Error('Authentication timed out. Please try again.');
-                }
                 throw new Error(parsedResult.error);
             }
 
@@ -430,7 +428,7 @@ function startPlaybackMonitoring() {
                     try {
                         localStorage.setItem(cacheKey, JSON.stringify(result));
                         
-                        // Maintain cache size under 100 entries (LRU Eviction)
+                        // Maintain cache size under 50 entries (LRU Eviction)
                         let cacheKeys = [];
                         try {
                             cacheKeys = JSON.parse(localStorage.getItem('lyrics_cache_keys') || '[]');
@@ -439,7 +437,7 @@ function startPlaybackMonitoring() {
                         cacheKeys = cacheKeys.filter(k => k !== cacheKey);
                         cacheKeys.push(cacheKey);
                         
-                        while (cacheKeys.length > 100) {
+                        while (cacheKeys.length > 50) {
                             const oldestKey = cacheKeys.shift();
                             localStorage.removeItem(oldestKey);
                         }
