@@ -1,6 +1,5 @@
 param(
-    [string]$trackName,
-    [string]$artistName
+    [string]$encodedArgs
 )
 
 # Force stdout encoding to UTF-8 to support non-English characters
@@ -14,6 +13,23 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $Output = @{
     synced = $false
     lyrics = "Lyrics not found for this track."
+}
+
+# Parse JSON arguments securely from Base64
+try {
+    $argBytes = [System.Convert]::FromBase64String($encodedArgs)
+    $argStr = [System.Text.Encoding]::UTF8.GetString($argBytes)
+    $argsObj = ConvertFrom-Json $argStr
+    $trackName = $argsObj.track
+    $artistName = $argsObj.artist
+} catch {
+    $Output | ConvertTo-Json -Compress
+    exit
+}
+
+if (-not $trackName -or -not $artistName) {
+    $Output | ConvertTo-Json -Compress
+    exit
 }
 
 # Prepare search titles

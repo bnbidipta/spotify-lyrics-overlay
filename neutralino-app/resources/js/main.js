@@ -1,25 +1,8 @@
-// Global error boundary logging to neutralinojs.log
-window.onerror = function (message, source, lineno, colno, error) {
-    const errorMsg = `JS Error: ${message} at ${source}:${lineno}:${colno}`;
-    try {
-        Neutralino.debug.log(errorMsg, 'ERROR');
-    } catch(e) {}
-    return false;
-};
-
-window.onunhandledrejection = function (event) {
-    const errorMsg = `JS Unhandled Rejection: ${event.reason}`;
-    try {
-        Neutralino.debug.log(errorMsg, 'ERROR');
-    } catch(e) {}
-};
-
 let accessToken = null;
 let playbackPollInterval = null;
 let lastTrackId = null;
 
 let spotifyClientId = '';
-let spotifyClientSecret = '';
 
 // Playback and Synced Lyrics state variables
 let parsedLyrics = [];
@@ -43,10 +26,9 @@ Neutralino.init();
 Neutralino.window.setDraggableRegion('drag-handle');
 
 // Prevent drag interception on buttons
-closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 loginBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 
-// Exit application when window close or close-btn is clicked
 closeBtn.addEventListener('click', () => {
     Neutralino.app.exit();
 });
@@ -55,34 +37,82 @@ Neutralino.events.on('windowClose', () => {
     Neutralino.app.exit();
 });
 
+// Sanitized global error handler to prevent access tokens, refresh tokens, or auth codes leaking to logs
+window.onerror = function (message, source, lineno, colno, error) {
+    let logMsg = `Error: ${message} at ${source}:${lineno}:${colno}`;
+    logMsg = logMsg.replace(/access_token=[a-zA-Z0-9_\-]+/g, 'access_token=[REDACTED]');
+    logMsg = logMsg.replace(/refresh_token=[a-zA-Z0-9_\-]+/g, 'refresh_token=[REDACTED]');
+    logMsg = logMsg.replace(/code=[a-zA-Z0-9_\-]+/g, 'code=[REDACTED]');
+    logMsg = logMsg.replace(/Bearer\s+[a-zA-Z0-9_\-]+/g, 'Bearer [REDACTED]');
+    console.error(logMsg);
+    return false; // Let browser process it normally
+};
+
+// DPAPI Token Encryption (Windows-only, falls back to plaintext if other OS)
+async function encryptToken(token) {
+    if (!token) return '';
+    if (window.NL_OS !== 'Windows') return token;
+    try {
+        const base64Token = btoa(unescape(encodeURIComponent(token)));
+        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/secure_store.ps1" "encrypt" "${base64Token}"`;
+        const result = await Neutralino.os.execCommand(command);
+        if (result.stdOut) {
+            return result.stdOut.trim();
+        }
+    } catch (e) {
+        console.error('Failed to encrypt token:', e);
+    }
+    return token;
+}
+
+// DPAPI Token Decryption (Windows-only, falls back to plaintext if other OS)
+async function decryptToken(encryptedToken) {
+    if (!encryptedToken) return '';
+    if (window.NL_OS !== 'Windows') return encryptedToken;
+    if (encryptedToken.startsWith("ERROR:")) return '';
+    
+    // DPAPI output is Base64 of a Windows encrypted byte stream. Verify character set before invoking.
+    if (!/^[a-zA-Z0-9+/=]+$/.test(encryptedToken)) {
+        return encryptedToken;
+    }
+    
+    try {
+        const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/secure_store.ps1" "decrypt" "${encryptedToken}"`;
+        const result = await Neutralino.os.execCommand(command);
+        if (result.stdOut) {
+            const output = result.stdOut.trim();
+            if (output && !output.startsWith("ERROR:")) {
+                return decodeURIComponent(escape(atob(output)));
+            }
+        }
+    } catch (e) {
+        console.error('Failed to decrypt token:', e);
+    }
+    return encryptedToken;
+}
+
 // Load Env variables
 async function loadEnv() {
     let envContent = '';
     try {
-        // Try current directory first (for packaged app)
-        envContent = await Neutralino.filesystem.readFile('.env');
-    } catch (err1) {
-        try {
-            // Try parent directory (for dev mode)
-            envContent = await Neutralino.filesystem.readFile('../.env');
-        } catch (err2) {
-            console.error('Failed to find .env in both ./ and ../');
-            songInfoEl.innerText = 'Configuration Error';
-            lyricsTextEl.innerText = 'Failed to find .env file containing Spotify credentials.';
-            return;
-        }
+        // Read strictly from absolute executable directory
+        envContent = await Neutralino.filesystem.readFile(`${window.NL_PATH}/.env`);
+    } catch (err) {
+        console.error('Failed to find .env in executable folder:', err);
+        songInfoEl.innerText = 'Configuration Error';
+        lyricsTextEl.innerText = 'Failed to find .env file containing Spotify credentials in the application directory.';
+        return;
     }
 
     try {
-        envContent.split('\n').forEach(line => {
+        envContent.split(/\r?\n/).forEach(line => {
             const parts = line.split('=');
             if (parts.length >= 2) {
                 const key = parts[0].trim();
                 const val = parts.slice(1).join('=').trim();
+                const cleanVal = val.replace(/^["']|["']$/g, '');
                 if (key === 'SPOTIFY_CLIENT_ID') {
-                    spotifyClientId = val;
-                } else if (key === 'SPOTIFY_CLIENT_SECRET') {
-                    spotifyClientSecret = val;
+                    spotifyClientId = cleanVal;
                 }
             }
         });
@@ -123,10 +153,33 @@ function hideAuthRequired() {
     lyricsSection.style.display = 'flex';
 }
 
-// Request login flow via browser & PowerShell
+// PKCE Cryptographic Helpers
+function generateRandomString(length) {
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    const values = crypto.getRandomValues(new Uint8Array(length));
+    return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+}
+
+async function sha256(plain) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(plain);
+    return window.crypto.subtle.digest('SHA-256', data);
+}
+
+function base64urlencode(a) {
+    return btoa(String.fromCharCode.apply(null, new Uint8Array(a)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function generateChallenge(verifier) {
+    const hashed = await sha256(verifier);
+    return base64urlencode(hashed);
+}
+
+// Request login flow via browser (PKCE Authorization Code Flow)
 async function performLogin() {
-    if (!spotifyClientId || !spotifyClientSecret) {
-        alert('Credentials missing in .env!');
+    if (!spotifyClientId) {
+        alert('SPOTIFY_CLIENT_ID missing in .env!');
         return;
     }
     
@@ -135,23 +188,56 @@ async function performLogin() {
     loginBtn.innerText = 'Logging in...';
 
     try {
-        // 1. Run PowerShell listener with absolute path and NoProfile optimization
+        // 1. Generate PKCE values & State to prevent CSRF
+        const verifier = generateRandomString(64);
+        const challenge = await generateChallenge(verifier);
+        const state = generateRandomString(16);
+
+        localStorage.setItem('spotify_code_verifier', verifier);
+        localStorage.setItem('spotify_auth_state', state);
+
+        // 2. Run PowerShell listener with absolute path and 30s timeout
         const listenerCommand = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/auth_listener.ps1"`;
         
-        // 2. Open Spotify Auth page in default system browser
-        const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyClientId}&redirect_uri=http://127.0.0.1:8888/callback&response_type=code&scope=user-read-currently-playing&show_dialog=true`;
+        // 3. Open Spotify Auth page in default system browser
+        const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyClientId}&redirect_uri=http://127.0.0.1:8888/callback&response_type=code&scope=user-read-currently-playing&code_challenge_method=S256&code_challenge=${challenge}&state=${state}&show_dialog=true`;
         await Neutralino.os.open(authUrl);
 
-        // 3. Await PowerShell command result
+        // 4. Await PowerShell command result
         const result = await Neutralino.os.execCommand(listenerCommand);
         if (result.stdOut) {
-            const code = result.stdOut.trim();
+            let parsedResult = {};
+            try {
+                parsedResult = JSON.parse(result.stdOut.trim());
+            } catch (e) {
+                throw new Error('Failed to parse authorization listener response: ' + result.stdOut);
+            }
+
+            if (parsedResult.error) {
+                if (parsedResult.error === "TIMEOUT") {
+                    throw new Error('Authentication timed out. Please try again.');
+                }
+                throw new Error(parsedResult.error);
+            }
+
+            const { code, state: returnedState } = parsedResult;
+
+            // CSRF State Validation
+            if (returnedState !== state) {
+                throw new Error('CSRF State validation failed.');
+            }
+
             if (code) {
-                // 4. Exchange code for Access and Refresh Tokens
-                const tokenData = await exchangeCodeForToken(code);
+                // 5. Exchange code for Access and Refresh Tokens via direct fetch (CORS supported by Spotify for PKCE!)
+                const tokenData = await exchangeCodeForToken(code, verifier);
                 accessToken = tokenData.access_token;
-                localStorage.setItem('spotify_access_token', tokenData.access_token);
-                localStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
+                
+                // Store tokens encrypted via DPAPI
+                const encAccessToken = await encryptToken(tokenData.access_token);
+                const encRefreshToken = await encryptToken(tokenData.refresh_token);
+                
+                localStorage.setItem('spotify_access_token', encAccessToken);
+                localStorage.setItem('spotify_refresh_token', encRefreshToken);
                 
                 const expiresAt = Date.now() + (tokenData.expires_in || 3600) * 1000;
                 localStorage.setItem('spotify_token_expires_at', expiresAt.toString());
@@ -173,43 +259,76 @@ async function performLogin() {
     }
 }
 
-// Exchange code using PowerShell RestMethod to bypass browser CORS
-async function exchangeCodeForToken(code) {
-    const exchangeCommand = `powershell -NoProfile -NonInteractive -Command "Invoke-RestMethod -Uri 'https://accounts.spotify.com/api/token' -Method Post -Body @{ grant_type='authorization_code'; code='${code}'; redirect_uri='http://127.0.0.1:8888/callback'; client_id='${spotifyClientId}'; client_secret='${spotifyClientSecret}' } -ContentType 'application/x-www-form-urlencoded' | ConvertTo-Json"`;
-    
-    const result = await Neutralino.os.execCommand(exchangeCommand);
-    if (result.stdOut) {
-        const response = JSON.parse(result.stdOut);
-        if (response && response.access_token) {
-            return response;
-        }
+// Exchange code via direct fetch
+async function exchangeCodeForToken(code, verifier) {
+    const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: 'http://127.0.0.1:8888/callback',
+        client_id: spotifyClientId,
+        code_verifier: verifier
+    });
+
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body.toString()
+    });
+
+    if (!response.ok) {
+        const errBody = await response.text();
+        throw new Error(`Token exchange failed: ${errBody}`);
     }
-    throw new Error(result.stdErr || 'Could not retrieve tokens.');
+
+    return await response.json();
 }
 
-// Silent Token Refresh using stored Refresh Token
+// Silent Token Refresh using stored Refresh Token via direct fetch (No PowerShell required!)
 async function refreshSpotifyToken() {
-    const refreshToken = localStorage.getItem('spotify_refresh_token');
-    if (!refreshToken) throw new Error('No refresh token available');
+    const encRefreshToken = localStorage.getItem('spotify_refresh_token');
+    if (!encRefreshToken) throw new Error('No refresh token available');
     
-    const refreshCommand = `powershell -NoProfile -NonInteractive -Command "Invoke-RestMethod -Uri 'https://accounts.spotify.com/api/token' -Method Post -Body @{ grant_type='refresh_token'; refresh_token='${refreshToken}'; client_id='${spotifyClientId}'; client_secret='${spotifyClientSecret}' } -ContentType 'application/x-www-form-urlencoded' | ConvertTo-Json"`;
-    
-    const result = await Neutralino.os.execCommand(refreshCommand);
-    if (result.stdOut) {
-        const response = JSON.parse(result.stdOut);
-        if (response && response.access_token) {
-            accessToken = response.access_token;
-            localStorage.setItem('spotify_access_token', accessToken);
-            if (response.refresh_token) {
-                localStorage.setItem('spotify_refresh_token', response.refresh_token);
-            }
-            const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
-            localStorage.setItem('spotify_token_expires_at', expiresAt.toString());
-            console.log('Spotify access token refreshed successfully.');
-            return accessToken;
-        }
+    const refreshToken = await decryptToken(encRefreshToken);
+    if (!refreshToken) throw new Error('Failed to decrypt refresh token');
+
+    const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: spotifyClientId
+    });
+
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body.toString()
+    });
+
+    if (!response.ok) {
+        const errBody = await response.text();
+        throw new Error(`Token refresh failed: ${errBody}`);
     }
-    throw new Error(result.stdErr || 'Could not refresh access token.');
+
+    const responseData = await response.json();
+    if (responseData && responseData.access_token) {
+        accessToken = responseData.access_token;
+        const encAccess = await encryptToken(accessToken);
+        localStorage.setItem('spotify_access_token', encAccess);
+        
+        if (responseData.refresh_token) {
+            const encRefresh = await encryptToken(responseData.refresh_token);
+            localStorage.setItem('spotify_refresh_token', encRefresh);
+        }
+        
+        const expiresAt = Date.now() + (responseData.expires_in || 3600) * 1000;
+        localStorage.setItem('spotify_token_expires_at', expiresAt.toString());
+        console.log('Spotify access token refreshed successfully.');
+        return accessToken;
+    }
+    throw new Error('No access token returned in refresh response.');
 }
 
 // Monitoring Spotify Web API
@@ -252,6 +371,11 @@ function startPlaybackMonitoring() {
                     showAuthRequired();
                     return;
                 }
+            }
+
+            // Treat non-200/5xx errors safely to prevent CORS errors from bubbling up to crash
+            if (!response.ok) {
+                return; 
             }
 
             const data = await response.json();
@@ -305,6 +429,21 @@ function startPlaybackMonitoring() {
                 if (!isErrorResult) {
                     try {
                         localStorage.setItem(cacheKey, JSON.stringify(result));
+                        
+                        // Maintain cache size under 100 entries (LRU Eviction)
+                        let cacheKeys = [];
+                        try {
+                            cacheKeys = JSON.parse(localStorage.getItem('lyrics_cache_keys') || '[]');
+                        } catch (e) {}
+                        
+                        cacheKeys = cacheKeys.filter(k => k !== cacheKey);
+                        cacheKeys.push(cacheKey);
+                        
+                        while (cacheKeys.length > 100) {
+                            const oldestKey = cacheKeys.shift();
+                            localStorage.removeItem(oldestKey);
+                        }
+                        localStorage.setItem('lyrics_cache_keys', JSON.stringify(cacheKeys));
                     } catch (e) {
                         console.error('Failed to write to lyrics cache:', e);
                     }
@@ -316,24 +455,27 @@ function startPlaybackMonitoring() {
     }, 3000);
 }
 
-// Fetch lyrics via backend PowerShell script with NoProfile/NonInteractive performance optimization
+// Fetch lyrics via backend PowerShell script with Base64 JSON args to prevent RCE
 async function fetchLyrics(trackName, artistName) {
     try {
-        // Escape double quotes for shell arguments
-        const cleanTrack = trackName.replace(/"/g, '\\"');
-        const cleanArtist = artistName.replace(/"/g, '\\"');
+        const argsJson = JSON.stringify({ track: trackName, artist: artistName });
+        const base64Args = btoa(unescape(encodeURIComponent(argsJson)));
         
-        const command = `chcp 65001 >nul && powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" "${cleanTrack}" "${cleanArtist}"`;
+        const command = `chcp 65001 >nul && powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" "${base64Args}"`;
         const result = await Neutralino.os.execCommand(command);
         
         if (result.stdOut) {
-            const data = JSON.parse(result.stdOut.trim());
-            if (data && data.lyrics) {
-                if (data.synced) {
-                    return { synced: true, lines: parseSyncedLyrics(data.lyrics) };
-                } else {
-                    return { synced: false, lines: parsePlainLyrics(data.lyrics) };
+            try {
+                const data = JSON.parse(result.stdOut.trim());
+                if (data && data.lyrics) {
+                    if (data.synced) {
+                        return { synced: true, lines: parseSyncedLyrics(data.lyrics) };
+                    } else {
+                        return { synced: false, lines: parsePlainLyrics(data.lyrics) };
+                    }
                 }
+            } catch (parseErr) {
+                console.error('Failed to parse stdout JSON:', parseErr, result.stdOut);
             }
         }
     } catch (err) {
@@ -390,11 +532,9 @@ function startLyricsSyncLoop() {
     }
     
     function update() {
-        if (accessToken && parsedLyrics.length > 0) {
-            let currentProgress = progressMsLastPoll;
-            if (isPlaying) {
-                currentProgress += (Date.now() - timestampLastPoll);
-            }
+        // Only run sync loop calculations if music is actively playing
+        if (isPlaying && accessToken && parsedLyrics.length > 0) {
+            const currentProgress = progressMsLastPoll + (Date.now() - timestampLastPoll);
             highlightActiveLyric(currentProgress);
         }
         animationFrameId = requestAnimationFrame(update);
@@ -402,12 +542,23 @@ function startLyricsSyncLoop() {
     animationFrameId = requestAnimationFrame(update);
 }
 
-// Highlight the active lyric and auto-scroll it into view center
+// Highlight the active lyric and auto-scroll it into view center using O(log n) Binary Search
 function highlightActiveLyric(currentProgress) {
+    if (parsedLyrics.length === 0) return;
+    
+    let low = 0;
+    let high = parsedLyrics.length - 1;
     let activeIndex = -1;
-    for (let i = 0; i < parsedLyrics.length; i++) {
-        if (parsedLyrics[i].time !== -1 && parsedLyrics[i].time <= currentProgress) {
-            activeIndex = i;
+    
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const lyricTime = parsedLyrics[mid].time;
+        
+        if (lyricTime !== -1 && lyricTime <= currentProgress) {
+            activeIndex = mid;
+            low = mid + 1; // Try to search later timestamps
+        } else {
+            high = mid - 1;
         }
     }
     
@@ -491,37 +642,37 @@ async function onStart() {
     await loadEnv();
     
     // If credentials couldn't be loaded, display a clear, permanent error on the UI
-    if (!spotifyClientId || !spotifyClientSecret) {
+    if (!spotifyClientId) {
         authSection.style.display = 'none';
         lyricsSection.style.display = 'flex';
         songInfoEl.innerText = 'Configuration Error';
-        lyricsTextEl.innerText = 'SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET is missing. Please verify that a valid .env file is present in the same folder as the executable.';
+        lyricsTextEl.innerText = 'SPOTIFY_CLIENT_ID is missing. Please verify that a valid .env file is present in the same folder as the executable.';
         return;
     }
     
-    // Check if we have persisted tokens
-    const savedToken = localStorage.getItem('spotify_access_token');
-    const refreshToken = localStorage.getItem('spotify_refresh_token');
-    const expiresAt = parseInt(localStorage.getItem('spotify_token_expires_at') || '0');
+    // Check if we have persisted tokens and decrypt them safely
+    const encSavedToken = localStorage.getItem('spotify_access_token');
+    const encRefreshToken = localStorage.getItem('spotify_refresh_token');
+    const expiresAt = parseInt(localStorage.getItem('spotify_token_expires_at') || '0', 10);
 
-    if (savedToken && refreshToken) {
-        // If expired or expiring in less than 5 minutes, refresh silently on launch
-        if (Date.now() > expiresAt - 300000) {
-            try {
+    if (encSavedToken && encRefreshToken) {
+        try {
+            accessToken = await decryptToken(encSavedToken);
+            
+            // If expired or expiring in less than 5 minutes, refresh silently on launch
+            if (Date.now() > expiresAt - 300000) {
                 hideAuthRequired();
                 updateUI('Connecting to Spotify...', 'Refreshing session...');
                 await refreshSpotifyToken();
-            } catch (err) {
-                console.error('Failed to refresh Spotify token on startup:', err);
-                showAuthRequired();
-                return;
             }
-        } else {
-            accessToken = savedToken;
+            
+            hideAuthRequired();
+            updateUI('Connecting to Spotify...', 'Restoring session...');
+            startPlaybackMonitoring();
+        } catch (err) {
+            console.error('Failed to restore/refresh Spotify session on startup:', err);
+            showAuthRequired();
         }
-        hideAuthRequired();
-        updateUI('Connecting to Spotify...', 'Restoring session...');
-        startPlaybackMonitoring();
     } else {
         showAuthRequired();
     }
