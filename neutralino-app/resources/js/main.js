@@ -51,6 +51,12 @@ const updateCloseBtn = document.getElementById('update-close-btn');
 let isAlwaysOnTop = true;
 let isClickThrough = false;
 
+// Premium integrations
+let trackDurationMs = 0;
+let isTranslationActive = false;
+let currentLikedTrackId = null;
+let isCurrentTrackLiked = false;
+
 Neutralino.init();
 Neutralino.window.setDraggableRegion('drag-handle');
 
@@ -544,6 +550,257 @@ if (musixmatchOptin) {
     });
 }
 
+// --- Premium overlay control bindings ---
+const prevBtn = document.getElementById('prev-btn');
+if (prevBtn) {
+    prevBtn.addEventListener('click', async () => {
+        await spotifyControl('previous', 'POST');
+        pollPlaybackStatusOnce();
+    });
+}
+
+const playBtn = document.getElementById('play-btn');
+if (playBtn) {
+    playBtn.addEventListener('click', async () => {
+        const action = isPlaying ? 'pause' : 'play';
+        isPlaying = !isPlaying;
+        playBtn.innerText = isPlaying ? '⏸️' : '▶️';
+        await spotifyControl(action, 'PUT');
+    });
+}
+
+const nextBtn = document.getElementById('next-btn');
+if (nextBtn) {
+    nextBtn.addEventListener('click', async () => {
+        await spotifyControl('next', 'POST');
+        pollPlaybackStatusOnce();
+    });
+}
+
+const likeBtn = document.getElementById('like-btn');
+if (likeBtn) {
+    likeBtn.addEventListener('click', async () => {
+        if (!lastTrackId) return;
+        const targetLike = !isCurrentTrackLiked;
+        const success = await likeTrack(lastTrackId, targetLike);
+        if (success) {
+            isCurrentTrackLiked = targetLike;
+            updateLikeButtonUI();
+        }
+    });
+}
+
+const translateBtn = document.getElementById('translate-btn');
+if (translateBtn) {
+    translateBtn.addEventListener('click', async () => {
+        isTranslationActive = !isTranslationActive;
+        translateBtn.classList.toggle('active', isTranslationActive);
+        if (isTranslationActive && parsedLyrics.length > 0) {
+            const needsTranslation = parsedLyrics.some(l => !l.translation && l.time !== -1);
+            if (needsTranslation) {
+                await translateLyrics(parsedLyrics);
+            }
+        }
+        renderLyrics(parsedLyrics);
+    });
+}
+
+// Stop propagation to prevent window dragging when clicking controls
+const controlsButtons = document.querySelectorAll('#controls-bar button');
+controlsButtons.forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.stopPropagation());
+});
+
+async function spotifyControl(action, method = 'POST', body = null) {
+    try {
+        const url = `https://api.spotify.com/v1/me/player/${action}`;
+        const options = {
+            method: method,
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        };
+        if (body) options.body = JSON.stringify(body);
+        const res = await fetch(url, options);
+        if (res.status === 401) {
+            await refreshSpotifyToken();
+            return spotifyControl(action, method, body);
+        }
+        return res;
+    } catch (err) {
+        console.error(`Spotify control ${action} failed`, err);
+    }
+}
+
+async function likeTrack(trackId, isLiked) {
+    try {
+        const url = `https://api.spotify.com/v1/me/tracks?ids=${trackId}`;
+        const res = await fetch(url, {
+            method: isLiked ? 'PUT' : 'DELETE',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (res.status === 401) {
+            await refreshSpotifyToken();
+            return likeTrack(trackId, isLiked);
+        }
+        return res.ok;
+    } catch (err) {
+        console.error(`Spotify like track failed`, err);
+    }
+    return false;
+}
+
+async function checkIsLiked(trackId) {
+    try {
+        const url = `https://api.spotify.com/v1/me/tracks/contains?ids=${trackId}`;
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (res.status === 401) {
+            await refreshSpotifyToken();
+            return checkIsLiked(trackId);
+        }
+        if (res.ok) {
+            const data = await res.json();
+            return data[0];
+        }
+    } catch (err) {
+        console.error(`Spotify check liked failed`, err);
+    }
+    return false;
+}
+
+async function checkTrackLikedStatus(trackId) {
+    if (currentLikedTrackId === trackId) return;
+    currentLikedTrackId = trackId;
+    isCurrentTrackLiked = await checkIsLiked(trackId);
+    updateLikeButtonUI();
+}
+
+function updateLikeButtonUI() {
+    const likeBtn = document.getElementById('like-btn');
+    if (likeBtn) {
+        likeBtn.innerText = isCurrentTrackLiked ? '💚' : '🖤';
+        likeBtn.title = isCurrentTrackLiked ? 'Unlike Track' : 'Like Track';
+    }
+}
+
+async function pollPlaybackStatusOnce() {
+    if (!accessToken) return;
+    try {
+        const response = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (response.status === 200) {
+            const data = await response.json();
+            if (data && data.item) {
+                progressMsLastPoll = data.progress_ms;
+                timestampLastPoll = Date.now();
+                isPlaying = data.is_playing;
+                const playBtn = document.getElementById('play-btn');
+                if (playBtn) playBtn.innerText = isPlaying ? '⏸️' : '▶️';
+            }
+        }
+    } catch {}
+}
+
+// --- Translation & Transliteration Helper ---
+async function translateLyrics(lines) {
+    try {
+        const textToTranslate = lines.map(l => l.text).join('\n');
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(textToTranslate)}`;
+        const response = await fetch(url);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data && data[0]) {
+            const translatedParagraph = data[0].map(s => s[0]).join('');
+            const translatedLines = translatedParagraph.split('\n');
+            lines.forEach((line, idx) => {
+                if (translatedLines[idx]) {
+                    line.translation = translatedLines[idx].trim();
+                }
+            });
+        }
+    } catch (e) {
+        console.error("Failed to translate lyrics", e);
+    }
+}
+
+const devanagariMap = {
+    'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo', 'ऋ': 'ri', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au',
+    'क': 'ka', 'ख': 'kha', 'ग': 'ga', 'घ': 'gha', 'ङ': 'nga',
+    'च': 'cha', 'छ': 'chha', 'ज': 'ja', 'झ': 'jha', 'ञ': 'nya',
+    'ट': 'ta', 'ठ': 'tha', 'ड': 'da', 'ढ': 'dha', 'ण': 'na',
+    'त': 'ta', 'थ': 'tha', 'द': 'da', 'ध': 'dha', 'न': 'na',
+    'प': 'pa', 'फ': 'pha', 'ब': 'ba', 'भ': 'bha', 'म': 'ma',
+    'य': 'ya', 'र': 'ra', 'ल': 'la', 'व': 'va', 'श': 'sha', 'ष': 'sha', 'स': 'sa', 'ह': 'ha',
+    'ा': 'a', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo', 'ृ': 'ri', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ं': 'n', 'ः': 'h', 'ँ': 'n'
+};
+
+function containsDevanagari(text) {
+    return /[\u0900-\u097F]/.test(text);
+}
+
+function transliterateHindi(text) {
+    let result = '';
+    for (let char of text) {
+        if (devanagariMap[char]) {
+            result += devanagariMap[char];
+        } else {
+            result += char;
+        }
+    }
+    return result
+        .replace(/a{3,}/g, 'aa')
+        .replace(/e{3,}/g, 'ee')
+        .replace(/o{3,}/g, 'oo')
+        .replace(/k+h/g, 'kh')
+        .replace(/c+h/g, 'ch');
+}
+
+function parseEnhancedLrcLine(lineTime, text) {
+    const words = [];
+    const tags = [];
+    let match;
+    const tagRegex = /<([0-9]{2}):([0-9]{2})[.:]([0-9]{2,3})>/g;
+    
+    let lastIndex = 0;
+    while ((match = tagRegex.exec(text)) !== null) {
+        const tagTime = parseInt(match[1], 10) * 60 * 1000 + parseInt(match[2], 10) * 1000 + parseFloat("0." + match[3]) * 1000;
+        tags.push({
+            time: tagTime,
+            index: match.index,
+            rawLength: match[0].length
+        });
+    }
+    
+    if (tags.length === 0) return null;
+    
+    let currentStart = lineTime;
+    let pos = 0;
+    for (let i = 0; i <= tags.length; i++) {
+        const endPos = (i < tags.length) ? tags[i].index : text.length;
+        const wordText = text.substring(pos, endPos).trim();
+        if (wordText) {
+            words.push({
+                text: wordText,
+                time: currentStart
+            });
+        }
+        if (i < tags.length) {
+            currentStart = tags[i].time;
+            pos = tags[i].index + tags[i].rawLength;
+        }
+    }
+    
+    return words;
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // --- Secure helpers ---
 function base64UrlEncode(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -770,7 +1027,7 @@ function startPlaybackMonitoring() {
                     showAuthRequired(); return;
                 }
             }
-            if (response.status === 429) return; // rate limited, skip
+            if (response.status === 429) return;
             const data = await response.json();
             if (!data || !data.item) {
                 updateUI('No music playing', 'Play a song on Spotify to view lyrics.');
@@ -779,7 +1036,23 @@ function startPlaybackMonitoring() {
             progressMsLastPoll = data.progress_ms;
             timestampLastPoll = Date.now();
             isPlaying = data.is_playing;
+            
+            const playBtn = document.getElementById('play-btn');
+            if (playBtn) playBtn.innerText = isPlaying ? '⏸️' : '▶️';
+
             const track = data.item;
+            trackDurationMs = track.duration_ms;
+            
+            const headerArt = document.getElementById('header-album-art');
+            const headerTitle = document.getElementById('header-title');
+            if (headerArt && track.album && track.album.images && track.album.images.length > 0) {
+                headerArt.src = track.album.images[2].url;
+                headerArt.style.display = 'block';
+            }
+            if (headerTitle) {
+                headerTitle.innerText = `${track.name} - ${track.artists.map(a=>a.name).join(', ')}`;
+            }
+
             const trackId = track.id;
             if (trackId !== lastTrackId) {
                 lastTrackId = trackId;
@@ -789,18 +1062,26 @@ function startPlaybackMonitoring() {
                 const cached = await getCachedLyrics(track.name, track.artists[0].name);
                 if (cached) {
                     parsedLyrics = cached.lines;
+                    if (isTranslationActive) {
+                        await translateLyrics(parsedLyrics);
+                    }
                     renderLyrics(parsedLyrics);
                     updateUI(songInfo, null);
+                    checkTrackLikedStatus(trackId);
                     return;
                 }
                 const result = await fetchLyrics(track.name, track.artists[0].name);
                 parsedLyrics = result.lines;
+                if (isTranslationActive) {
+                    await translateLyrics(parsedLyrics);
+                }
                 renderLyrics(parsedLyrics);
                 updateUI(songInfo, null);
                 const isError = result.lines.length===0 || (result.lines.length===1 && result.lines[0].text==="Lyrics not found for this track.");
                 if (!isError) {
                     try { await cacheLyrics(track.name, track.artists[0].name, result); } catch {}
                 }
+                checkTrackLikedStatus(trackId);
             }
         } catch (err) { console.error('Playback poll error', err); }
     }, 3000);
@@ -839,38 +1120,75 @@ function parseSyncedLyrics(syncedLyrics) {
             const msStr = match[3]||'0';
             const ms = parseInt(msStr.padEnd(3,'0').substring(0,3),10);
             const totalMs = (minutes*60+seconds)*1000+ms;
-            const text = match[4].trim();
-            if (text) parsed.push({ time: totalMs, text });
+            const rawText = match[4].trim();
+            if (rawText) {
+                const words = parseEnhancedLrcLine(totalMs, rawText);
+                if (words) {
+                    const cleanText = rawText.replace(/<[0-9]{2}:[0-9]{2}[.:][0-9]{2,3}>/g, '').trim();
+                    parsed.push({ time: totalMs, text: cleanText, words });
+                } else {
+                    parsed.push({ time: totalMs, text: rawText });
+                }
+            }
         }
     }
     return parsed;
 }
+
 function parsePlainLyrics(plainLyrics) {
     return plainLyrics.split('\n').map(l=>({ time:-1, text:l.trim() })).filter(l=>l.text);
 }
+
 function renderLyrics(parsedLines) {
     lyricsTextEl.innerHTML = '';
     parsedLines.forEach((line,index)=>{
         const el = document.createElement('div');
         el.className = 'lyric-line';
-        el.innerText = line.text || ' '; // innerText prevents XSS
+        
+        if (line.words && line.words.length > 0) {
+            el.innerHTML = line.words.map(w => `<span class="word" data-time="${w.time}">${escapeHtml(w.text)}</span>`).join(' ');
+        } else {
+            el.innerText = line.text || ' ';
+        }
+
+        if (isTranslationActive && line.translation) {
+            const transDiv = document.createElement('span');
+            transDiv.className = 'translation-text';
+            
+            if (containsDevanagari(line.text)) {
+                const translit = transliterateHindi(line.text);
+                transDiv.innerText = `${translit}\n(${line.translation})`;
+            } else {
+                transDiv.innerText = line.translation;
+            }
+            el.appendChild(transDiv);
+        }
+
         if (line.time !== -1) el.dataset.time = line.time;
         el.id = `line-${index}`;
         lyricsTextEl.appendChild(el);
     });
 }
+
 function startLyricsSyncLoop() {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     function update() {
-        if (accessToken && parsedLyrics.length>0) {
+        if (accessToken) {
             let currentProgress = progressMsLastPoll + currentConfig.sync_offset;
             if (isPlaying) currentProgress += (Date.now() - timestampLastPoll);
             highlightActiveLyric(currentProgress);
+
+            const progressBar = document.getElementById('progress-bar');
+            if (progressBar && trackDurationMs > 0) {
+                const pct = Math.min(100, (currentProgress / trackDurationMs) * 100);
+                progressBar.style.width = `${pct}%`;
+            }
         }
         animationFrameId = requestAnimationFrame(update);
     }
     animationFrameId = requestAnimationFrame(update);
 }
+
 function highlightActiveLyric(currentProgress) {
     let activeIndex = -1;
     for (let i = 0; i < parsedLyrics.length; i++) {
@@ -879,17 +1197,32 @@ function highlightActiveLyric(currentProgress) {
             activeIndex = i;
         }
     }
-    if (activeIndex!==-1 && activeIndex!==lastActiveIndex) {
-        if (lastActiveIndex!==-1) {
-            const prev = document.getElementById(`line-${lastActiveIndex}`);
-            if (prev) prev.classList.remove('active');
+    if (activeIndex!==-1) {
+        if (activeIndex!==lastActiveIndex) {
+            if (lastActiveIndex!==-1) {
+                const prev = document.getElementById(`line-${lastActiveIndex}`);
+                if (prev) prev.classList.remove('active');
+            }
+            const activeEl = document.getElementById(`line-${activeIndex}`);
+            if (activeEl) {
+                activeEl.classList.add('active');
+                activeEl.scrollIntoView({ behavior:'smooth', block:'center' });
+            }
+            lastActiveIndex = activeIndex;
         }
+        
         const activeEl = document.getElementById(`line-${activeIndex}`);
         if (activeEl) {
-            activeEl.classList.add('active');
-            activeEl.scrollIntoView({ behavior:'smooth', block:'center' });
+            const wordSpans = activeEl.querySelectorAll('.word');
+            wordSpans.forEach(span => {
+                const t = parseInt(span.getAttribute('data-time'), 10);
+                if (currentProgress >= t) {
+                    span.classList.add('active');
+                } else {
+                    span.classList.remove('active');
+                }
+            });
         }
-        lastActiveIndex = activeIndex;
     }
 }
 

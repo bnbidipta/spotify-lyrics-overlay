@@ -13,8 +13,18 @@
 </head>
 <body>
     <div id="lyrics-container">
-        <!-- Drag handle -->
-        <div id="drag-handle">Spotify Lyrics</div>
+        <!-- Drag handle & Player header -->
+        <div id="drag-handle">
+            <img id="header-album-art" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Album Art" style="display:none;" />
+            <div id="header-meta">
+                <span id="header-title">Spotify Lyrics</span>
+            </div>
+        </div>
+        
+        <!-- Sleek player progress bar -->
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
         
         <!-- Update Available Banner -->
         <div id="update-banner" style="display: none;">
@@ -23,8 +33,14 @@
             <button id="update-close-btn" class="close-btn" title="Dismiss Update">&times;</button>
         </div>
         
-        <!-- Controls bar (Always on top, Click-through, Settings) -->
+        <!-- Controls bar (Playback Controls + Window Options) -->
         <div id="controls-bar">
+            <button id="prev-btn" class="control-btn" title="Previous Track">⏮️</button>
+            <button id="play-btn" class="control-btn" title="Play/Pause">⏸️</button>
+            <button id="next-btn" class="control-btn" title="Next Track">⏭️</button>
+            <button id="like-btn" class="control-btn" title="Like Track">🖤</button>
+            <span class="control-divider">|</span>
+            <button id="translate-btn" class="control-btn" title="Toggle Translation (文/A)">文</button>
             <button id="pin-btn" class="control-btn" title="Pin Window (Always on Top)">📌</button>
             <button id="lock-btn" class="control-btn" title="Lock Window (Click-Through)">🔓</button>
             <button id="settings-btn" class="control-btn" title="Window Settings">⚙️</button>

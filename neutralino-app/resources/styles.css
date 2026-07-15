@@ -633,3 +633,104 @@ html, body {
     color: rgba(0, 0, 0, 0.5);
     border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
+
+/* Media controls and player integrations */
+#drag-handle {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    box-sizing: border-box;
+}
+
+#header-album-art {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    margin-right: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    display: none;
+}
+
+#header-meta {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#header-title {
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0.8;
+}
+
+#progress-container {
+    width: 100%;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    position: relative;
+    margin-bottom: 6px;
+    overflow: hidden;
+}
+
+#progress-bar {
+    width: 0%;
+    height: 100%;
+    background: #1DB954;
+    transition: width 0.2s linear;
+}
+
+/* Control dividers and highlights */
+.control-divider {
+    color: rgba(255, 255, 255, 0.2);
+    font-size: 14px;
+    pointer-events: none;
+    user-select: none;
+    margin: 0 4px;
+}
+
+#translate-btn.active {
+    color: #1DB954;
+    text-shadow: 0 0 6px rgba(29, 185, 84, 0.5);
+}
+
+/* Lyric Translations */
+.lyric-line .translation-text {
+    display: block;
+    font-size: 0.72em;
+    opacity: 0.55;
+    font-style: italic;
+    margin-top: 4px;
+    font-weight: 400;
+    line-height: 1.4;
+    transition: opacity 0.2s;
+}
+
+/* Karaoke Word-by-word Synced Highlights */
+.lyric-line .word {
+    opacity: 0.35;
+    transition: opacity 0.12s ease, color 0.12s ease;
+    display: inline;
+    white-space: pre-wrap;
+}
+
+.lyric-line.active .word.active {
+    opacity: 1;
+    color: #1DB954;
+    text-shadow: 0 0 8px rgba(29, 185, 84, 0.55);
+}
+
+#lyrics-container.theme-light #progress-container {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+#lyrics-container.theme-light .control-divider {
+    color: rgba(0, 0, 0, 0.15);
+}
+
+#lyrics-container.theme-light .lyric-line .translation-text {
+    color: rgba(0, 0, 0, 0.65);
+}
