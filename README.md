@@ -8,26 +8,30 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 
 ## Features
 
-- **Apple Music-Style Synced Scrolling**: Integrates a real-time local timing loop (`requestAnimationFrame`) interpolating Spotify's playback to center, scale, glow, and scroll the active lyrics line with smooth gradient masks.
-- **Multi-Provider Synced & Plain Scrapers (Lrclib, NetEase, Musixmatch & Lyrics.ovh)**: Bypasses browser CORS constraints by calling a background PowerShell script. It implements a 4-level fallback pipeline (Lrclib -> NetEase -> Musixmatch -> Lyrics.ovh), automatically splitting track names on " - " to remove single/deluxe suffixes and feature tags, guaranteeing maximum lyrics coverage.
-- **Token Caching & Session Persistence**: Caches Spotify authentication tokens and Musixmatch API search tokens locally to ensure instant load times and completely prevent API rate limiting.
+- **Apple Music-Style Synced Scrolling**: Real-time sync loop (`requestAnimationFrame`) utilizing binary search (`O(log n)`) to scroll the active lyrics line smoothly with zero CPU overhead.
+- **RCE-Safe Base64 Command Parsing**: Calls local helper scripts via Base64-JSON encoded arguments. This seals command parameter injection vulnerabilities from song metadata or redirect URLs.
+- **Client-Side PKCE OAuth Flow**: Complete elimination of client secrets (`SPOTIFY_CLIENT_SECRET`). Uses browser-based PKCE (Proof Key for Code Exchange) flow directly over `fetch`, making credentials sharing obsolete.
+- **CSRF Protection & Port Security**: Standard loopback address (`http://127.0.0.1:8888/callback`) with state verification matching UUID keys to block Cross-Site Request Forgery (CSRF).
+- **Multi-Provider Scraper Pipeline (Lrclib, NetEase, Musixmatch & Lyrics.ovh)**: Calls a background PowerShell helper with a 4-level fallback search. Correctly sanitizes remaster/single suffixes strictly at the end of song titles.
+- **LRU Lyrics Cache & Eviction**: Caches searched lyrics locally in `localStorage` for instant 0ms load times on replays. Keeps cache size under 50 items.
 - **WebView2 Transparency & Control Fixes**:
   - Drag the borderless window easily from the designated top header bar.
   - Jitter-free window resizing using Pointer Events and pointer captures.
-  - Hover and click events are properly captured on transparent handles without clicking through to the desktop.
-  - Account mismatch auto-validation via forced `show_dialog=true` authentication checking.
-- **Ultra-Lightweight**: Only ~2MB in package size and extremely low memory footprint compared to Chrome-packaged shells.
+  - User-select disabled globally to prevent accidental text selections.
 
 ---
 
 ## Installation & Running
 
-1. Download the latest release `.zip` from the [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases) page.
-2. Extract the folder.
-3. Make sure you have a `.env` file in the folder with your Spotify Developer Client ID (no client secret is needed under the secure PKCE flow):
+1. Download the latest release `.zip` or install via `SpotifyLyricsOverlay-Setup-2.0.0.exe` from [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
+2. Create a `.env` file in the folder next to the executable:
    ```env
-   SPOTIFY_CLIENT_ID=your_spotify_client_id
+   SPOTIFY_CLIENT_ID=your_spotify_client_id_from_dashboard
    ```
+   *(Note: No client secret is required under this secure PKCE flow).*
+3. Add the redirect URI to your Spotify App settings:
+   - Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+   - Edit Settings of your App -> Add Redirect URI: `http://127.0.0.1:8888/callback`.
 4. Double-click **`spotify-lyrics-overlay.exe`** to launch the overlay.
 5. Click **Login to Spotify** (this launches your browser to verify your account).
 6. Play any song on Spotify!
@@ -36,28 +40,28 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 
 ## Workspace Directory Structure
 
-The project has been cleaned of all heavy Electron leftovers and organized cleanly:
-
 ```
+├── .github/workflows/           # GitHub Actions Build pipeline
+│   └── build.yml
 ├── neutralino-app/              # Application source code
 │   ├── resources/               # HTML, CSS, JavaScript, and asset files
 │   │   ├── css/
-│   │   ├── js/                  # main.js startup and rendering logic
-│   │   ├── icons/               # 3D Glossy App Icon
-│   │   └── index.html
+│   │   ├── js/                  # main.js PKCE authentication & rendering logic
+│   │   ├── icons/               # App Icons
+│   │   └── index.html           # Frame layout and HTML structure (with CSP)
 │   ├── neutralino.config.json   # Neutralino configuration and mode profiles
-│   └── fetch_lyrics.ps1         # Unified background scraper for Lrclib, NetEase, Musixmatch & Lyrics.ovh
+│   ├── auth_listener.ps1        # OAuth code callback loopback listener (port 8888)
+│   └── fetch_lyrics.ps1         # Unified background lyrics scraper
 │
 ├── neutralino-release/          # Distribution folder
 │   ├── spotify-lyrics-overlay.exe # Native compiled C++ execution engine
 │   ├── resources.neu            # Bundled front-end app assets
-│   ├── auth_listener.ps1        # Native OAuth listener script (port 8888)
+│   ├── auth_listener.ps1        # Released copy of redirect listener
 │   └── fetch_lyrics.ps1         # Released copy of the unified helper
 │
-├── .agents/
-│   └── AGENTS.md                # Neutralinojs development rules & guardrails
-│
-└── .env                         # Spotify developer credential keys
+├── installer.iss                # Inno Setup Windows installer configuration
+├── build_and_push.ps1           # Release build automation script
+└── .env                         # Local configuration environment
 ```
 
 ---
@@ -67,6 +71,7 @@ The project has been cleaned of all heavy Electron leftovers and organized clean
 ### Prerequisites
 - Node.js installed.
 - [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (preinstalled on Windows 10/11).
+- Inno Setup Compiler (optional, for compiling installers).
 
 ### Build steps:
 1. Navigate into the source folder:

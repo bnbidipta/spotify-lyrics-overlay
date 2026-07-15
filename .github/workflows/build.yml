@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Windows Application
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          cd neutralino-app
+          npm install
+
+      - name: Build Application
+        run: |
+          cd neutralino-app
+          npx @neutralinojs/neu build
+
+      - name: Create Release Structure
+        run: |
+          mkdir dist_release
+          copy neutralino-app\dist\spotify-lyrics-overlay\spotify-lyrics-overlay-win_x64.exe dist_release\spotify-lyrics-overlay.exe
+          copy neutralino-app\dist\spotify-lyrics-overlay\resources.neu dist_release\resources.neu
+          copy neutralino-app\auth_listener.ps1 dist_release\auth_listener.ps1
+          copy neutralino-app\fetch_lyrics.ps1 dist_release\fetch_lyrics.ps1
+          copy neutralino-app\secure_store.ps1 dist_release\secure_store.ps1
+
+      - name: Compress Release Archive
+        run: |
+          powershell -Command "Compress-Archive -Path dist_release\* -DestinationPath spotify-lyrics-overlay-windows.zip -Force"
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: spotify-lyrics-overlay-windows
+          path: spotify-lyrics-overlay-windows.zip

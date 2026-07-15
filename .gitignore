@@ -20,3 +20,11 @@ neutralino-release/*.log
 neutralino-app/.storage/
 neutralino.js
 neutralino-app/resources/js/neutralino.js
+
+# Temporary release folders & setups
+dist_release/
+.tmp/
+neutralino-release/.tmp/
+neutralino-app/.tmp/
+*.zip
+*Setup*.exe

@@ -50,7 +50,7 @@ async function generatePkce() {
     const challenge = base64UrlEncode(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
     return { verifier, challenge };
 }
-function getRandomPort() { return 50000 + Math.floor(Math.random()*10000); }
+function getRandomPort() { return 8888; }
 
 async function loadEnv() {
     let envContent = '';
