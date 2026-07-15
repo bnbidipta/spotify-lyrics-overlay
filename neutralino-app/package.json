@@ -6,7 +6,7 @@
     "build": "neu build"
   },
   "devDependencies": {
-    "@neutralinojs/neu": "^3.11.0",
+    "@neutralinojs/neu": "^11.7.2",
     "uuid": "^8.3.2"
   }
 }
