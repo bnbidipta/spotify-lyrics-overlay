@@ -31,21 +31,22 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 ## Features
 
 - **Apple Music-Style Synced Scrolling**: Real-time sync loop (`requestAnimationFrame`) utilizing a robust timing scan to scroll the active lyrics line smoothly with zero CPU overhead.
-- **RCE-Safe Base64 Command Parsing**: Calls local helper scripts via Base64-JSON encoded arguments. This seals command parameter injection vulnerabilities from song metadata or redirect URLs.
+- **RCE-Safe Base64 Command Parsing**: Calls local helper binaries via Base64-JSON encoded arguments. This seals command parameter injection vulnerabilities from song metadata or redirect URLs.
 - **Client-Side PKCE OAuth Flow**: Complete elimination of client secrets (`SPOTIFY_CLIENT_SECRET`). Uses browser-based PKCE (Proof Key for Code Exchange) flow directly over `fetch`, making credentials sharing obsolete.
 - **CSRF Protection & Port Security**: Standard loopback address (`http://127.0.0.1:8888/callback`) with state verification matching UUID keys to block Cross-Site Request Forgery (CSRF).
-- **Multi-Provider Scraper Pipeline (Lrclib, NetEase, Musixmatch & Lyrics.ovh)**: Calls a background PowerShell helper with a 4-level fallback search. Correctly sanitizes remaster/single suffixes strictly at the end of song titles.
-- **LRU Lyrics Cache & Eviction**: Caches searched lyrics locally in `localStorage` for instant 0ms load times on replays. Keeps cache size under 50 items.
+- **Multi-Provider Scraper Pipeline**: Queries Lrclib, NetEase, and Lyrics.ovh concurrently using native compiled C# helper threads. **Musixmatch (reverse-engineered) is opt-in disabled by default** for licensing safety.
+- **Local Disk-based LRU Lyrics Cache**: Caches searched lyrics locally in `lyrics_cache.json` for instant 0ms load times on replays. Keeps cache size under 50 items.
 - **WebView2 Transparency & Control Fixes**:
   - Drag the borderless window easily from the designated top header bar.
   - Jitter-free window resizing using Pointer Events and pointer captures.
   - User-select disabled globally to prevent accidental text selections.
+- **Antivirus Hardened**: Spawns native compiled C# executables (`.exe`) instead of PowerShell script files bypassing policies, preventing false-positive security flags.
 
 ---
 
 ## Quick Start (One-Liner Install)
 
-1. Download the latest release `.zip` or install via `SpotifyLyricsOverlay-Setup-2.0.0.exe` from [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
+1. Download the latest release `.zip` or install via `SpotifyLyricsOverlay-Setup-2.4.0.exe` from [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
 2. Configure your Spotify Client ID (no client secret is needed):
    - Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
    - Edit Settings of your App ➔ Add Redirect URI: `http://127.0.0.1:8888/callback`.
@@ -71,15 +72,12 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 │   │   ├── icons/               # App Icons
 │   │   └── index.html           # Frame layout and HTML structure (with CSP)
 │   ├── neutralino.config.json   # Neutralino configuration and mode profiles
-│   ├── auth_listener.ps1        # OAuth code callback loopback listener (port 8888)
-│   └── fetch_lyrics.ps1         # Unified background lyrics scraper
+│   ├── auth_listener.cs         # OAuth code callback redirect listener (C# source)
+│   ├── fetch_lyrics.cs          # Unified parallel scraper (C# source)
+│   ├── secure_store.cs          # DPAPI secure local storage helper (C# source)
+│   └── window_utils.cs          # Native transparency window styles helper (C# source)
 │
-├── neutralino-release/          # Distribution folder
-│   ├── spotify-lyrics-overlay.exe # Native compiled C++ execution engine
-│   ├── resources.neu            # Bundled front-end app assets
-│   ├── auth_listener.ps1        # Released copy of redirect listener
-│   └── fetch_lyrics.ps1         # Released copy of the unified helper
-│
+├── dist_release/                # Dynamic local release/packaging output
 ├── installer.iss                # Inno Setup Windows installer configuration
 ├── build_and_push.ps1           # Release build automation script
 └── .env                         # Local configuration environment
@@ -92,6 +90,7 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 ### Prerequisites
 - Node.js installed.
 - [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (preinstalled on Windows 10/11).
+- MSBuild / .NET Framework `csc.exe` (installed by default with Windows).
 - Inno Setup Compiler (optional, for compiling installers).
 
 ### Build steps:
@@ -104,6 +103,12 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
    npx @neutralinojs/neu build
    ```
    This generates the compiled binaries and `resources.neu` inside `neutralino-app/dist/`.
+
+---
+
+## Disclaimer
+
+This application is not affiliated with, authorized, maintained, sponsored, or endorsed by Spotify or any of its affiliates or partners. Lyrics displayed in the application are retrieved dynamically from public third-party services (Lrclib, NetEase, Lyrics.ovh, and optionally Musixmatch) and are subject to their respective terms of service.
 
 ---
 

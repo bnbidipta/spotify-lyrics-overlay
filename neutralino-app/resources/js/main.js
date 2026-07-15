@@ -77,7 +77,7 @@ let currentConfig = {
     line_scale: 1.2,
     sync_offset: 0,
     theme: "dark",
-    provider_order: ["lrclib", "netease", "musixmatch", "lyricsovh"]
+    provider_order: ["lrclib", "netease", "lyricsovh"]
 };
 
 async function loadConfig() {
@@ -416,6 +416,11 @@ function applySettings() {
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) themeSelect.value = currentConfig.theme;
 
+    const musixmatchOptinEl = document.getElementById('musixmatch-optin');
+    if (musixmatchOptinEl) {
+        musixmatchOptinEl.checked = currentConfig.provider_order.includes('musixmatch');
+    }
+
     renderProviderList();
 }
 async function checkForUpdates() {
@@ -519,6 +524,22 @@ if (themeSelect) {
     themeSelect.addEventListener('change', async (e) => {
         currentConfig.theme = e.target.value;
         if (lyricsContainer) lyricsContainer.className = `theme-${e.target.value}`;
+        await saveConfig();
+    });
+}
+
+const musixmatchOptin = document.getElementById('musixmatch-optin');
+if (musixmatchOptin) {
+    musixmatchOptin.addEventListener('mousedown', (e) => e.stopPropagation());
+    musixmatchOptin.addEventListener('change', async (e) => {
+        if (e.target.checked) {
+            if (!currentConfig.provider_order.includes('musixmatch')) {
+                currentConfig.provider_order.push('musixmatch');
+            }
+        } else {
+            currentConfig.provider_order = currentConfig.provider_order.filter(p => p !== 'musixmatch');
+        }
+        renderProviderList();
         await saveConfig();
     });
 }
