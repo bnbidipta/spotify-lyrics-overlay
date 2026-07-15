@@ -7,8 +7,26 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 </p>
 
 <p align="center">
+  <img src="demo.gif" width="450" alt="Spotify Lyrics Overlay Synced Scroll Demo" />
+</p>
+
+<p align="center">
   <img src="preview.png" width="350" alt="Spotify Lyrics Overlay Preview" />
 </p>
+
+---
+
+## ⚡ Comparison: The Lightest Lyrics App
+
+| Metric / Feature | **Spotify Lyrics Overlay** | **Spicetify (popup-lyrics)** | **Musixmatch Desktop** |
+| :--- | :--- | :--- | :--- |
+| **Disk Size** | 🚀 **< 2 MB** | ~150 MB | ~300 MB |
+| **Memory Usage** | 🔋 **~15-20 MB** | ~150 MB+ (embedded inside Spotify) | ~300 MB+ (Electron shell) |
+| **Credentials** | Client ID only (PKCE) | Local Spotify client hooks | In-app login |
+| **Lyrics Fallback** | **4-Level Pipeline** (Lrclib ➔ NetEase ➔ Musixmatch ➔ Lyrics.ovh) | Spotify default lyrics database | Musixmatch database only |
+| **Window Type** | Borderless glassmorphic overlay | Embedded browser extension | Standalone heavy window |
+
+---
 
 ## Features
 
@@ -25,17 +43,16 @@ An ultra-lightweight, customizable, and responsive desktop lyrics overlay for Sp
 
 ---
 
-## Installation & Running
+## Quick Start (One-Liner Install)
 
 1. Download the latest release `.zip` or install via `SpotifyLyricsOverlay-Setup-2.0.0.exe` from [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
-2. Create a `.env` file in the folder next to the executable:
-   ```env
-   SPOTIFY_CLIENT_ID=your_spotify_client_id_from_dashboard
+2. Configure your Spotify Client ID (no client secret is needed):
+   - Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+   - Edit Settings of your App ➔ Add Redirect URI: `http://127.0.0.1:8888/callback`.
+3. Open PowerShell in the app folder and run this one-liner to create your configuration:
+   ```powershell
+   "SPOTIFY_CLIENT_ID=your_id_here" | Out-File -FilePath .env -Encoding utf8
    ```
-   *(Note: No client secret is required under this secure PKCE flow).*
-3. Add the redirect URI to your Spotify App settings:
-   - Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-   - Edit Settings of your App -> Add Redirect URI: `http://127.0.0.1:8888/callback`.
 4. Double-click **`spotify-lyrics-overlay.exe`** to launch the overlay.
 5. Click **Login to Spotify** (this launches your browser to verify your account).
 6. Play any song on Spotify!
