@@ -24,18 +24,68 @@ let lastActiveIndex = -1;
 
 const authSection = document.getElementById('auth-section');
 const lyricsSection = document.getElementById('lyrics-section');
+const setupSection = document.getElementById('setup-section');
 const songInfoEl = document.getElementById('song-info');
 const lyricsTextEl = document.getElementById('lyrics-text');
 const loginBtn = document.getElementById('login-btn');
 const closeBtn = document.getElementById('close-btn');
+const getIdBtn = document.getElementById('get-id-btn');
+const watchLoomBtn = document.getElementById('watch-loom-btn');
 
 Neutralino.init();
 Neutralino.window.setDraggableRegion('drag-handle');
 
 closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 loginBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-closeBtn.addEventListener('click', () => { Neutralino.app.exit(); });
-Neutralino.events.on('windowClose', () => { Neutralino.app.exit(); });
+if (getIdBtn) getIdBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+if (watchLoomBtn) watchLoomBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+
+async function saveWindowGeometry() {
+    try {
+        const size = await Neutralino.window.getSize();
+        const pos = await Neutralino.window.getPosition();
+        localStorage.setItem('window_width', size.width);
+        localStorage.setItem('window_height', size.height);
+        localStorage.setItem('window_x', pos.x);
+        localStorage.setItem('window_y', pos.y);
+    } catch (e) {
+        console.error('Failed to save window geometry', e);
+    }
+}
+async function restoreWindowGeometry() {
+    try {
+        const w = localStorage.getItem('window_width');
+        const h = localStorage.getItem('window_height');
+        const x = localStorage.getItem('window_x');
+        const y = localStorage.getItem('window_y');
+        if (w && h) {
+            await Neutralino.window.setSize({ width: parseInt(w,10), height: parseInt(h,10) });
+        }
+        if (x !== null && y !== null) {
+            await Neutralino.window.move(parseInt(x,10), parseInt(y,10));
+        }
+    } catch (e) {
+        console.error('Failed to restore window geometry', e);
+    }
+}
+
+async function handleExit() {
+    try { await saveWindowGeometry(); } catch (e) {}
+    Neutralino.app.exit();
+}
+closeBtn.addEventListener('click', handleExit);
+Neutralino.events.on('windowClose', handleExit);
+
+if (getIdBtn) {
+    getIdBtn.addEventListener('click', () => {
+        Neutralino.os.open('https://developer.spotify.com/dashboard');
+    });
+}
+if (watchLoomBtn) {
+    watchLoomBtn.addEventListener('click', () => {
+        Neutralino.os.open('https://www.loom.com/share/placeholder');
+    });
+}
 
 // --- Secure helpers ---
 function base64UrlEncode(buffer) {
@@ -88,8 +138,16 @@ function displayPlaceholderLyric(text) {
     lineEl.innerText = text;
     lyricsTextEl.appendChild(lineEl);
 }
-function showAuthRequired() { authSection.style.display = 'flex'; lyricsSection.style.display = 'none'; }
-function hideAuthRequired() { authSection.style.display = 'none'; lyricsSection.style.display = 'flex'; }
+function showAuthRequired() {
+    if (setupSection) setupSection.style.display = 'none';
+    authSection.style.display = 'flex';
+    lyricsSection.style.display = 'none';
+}
+function hideAuthRequired() {
+    if (setupSection) setupSection.style.display = 'none';
+    authSection.style.display = 'none';
+    lyricsSection.style.display = 'flex';
+}
 
 // --- PKCE Token Exchange via fetch (NO PowerShell, NO secret) ---
 async function exchangeCodeViaFetch(code, verifier, port) {
@@ -360,11 +418,12 @@ resizeHandle.addEventListener('pointercancel', stopResizing);
 window.addEventListener('blur', stopResizing);
 
 async function onStart() {
+    await restoreWindowGeometry();
     await loadEnv();
     if (!spotifyClientId) {
-        authSection.style.display='none'; lyricsSection.style.display='flex';
-        songInfoEl.innerText='Configuration Error';
-        lyricsTextEl.innerText='SPOTIFY_CLIENT_ID missing. Add to .env (no secret needed with PKCE).';
+        if (setupSection) setupSection.style.display = 'flex';
+        authSection.style.display = 'none';
+        lyricsSection.style.display = 'none';
         return;
     }
     const savedToken = localStorage.getItem('spotify_access_token');

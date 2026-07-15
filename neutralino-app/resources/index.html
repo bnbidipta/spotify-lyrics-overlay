@@ -20,6 +20,12 @@
             <p>Please login to Spotify to see lyrics</p>
             <button id="login-btn">Login to Spotify</button>
         </div>
+        <div id="setup-section" style="display: none;">
+            <p class="setup-title">Setup Required</p>
+            <p class="setup-desc">SPOTIFY_CLIENT_ID is missing. Get your Client ID and create your .env configuration file.</p>
+            <button id="get-id-btn">Get Client ID</button>
+            <p class="setup-help">Watch the <span id="watch-loom-btn" class="link-btn">30-second setup video</span></p>
+        </div>
         <div id="lyrics-section">
             <div id="song-info">Connecting to Spotify...</div>
             <div id="lyrics-text">Searching for lyrics...</div>
