@@ -627,18 +627,59 @@ async function performLogin() {
 
 // TODO: encrypt with DPAPI before localStorage: ConvertFrom-SecureString
 
-function evictLyricsCache(maxEntries = 50) {
+let lyricsCache = {};
+
+async function loadLyricsCache() {
     try {
-        const keys = [];
-        for (let i=0;i<localStorage.length;i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith('lyrics_cache_')) keys.push(k);
+        const content = await Neutralino.filesystem.readFile('lyrics_cache.json');
+        if (content) {
+            lyricsCache = JSON.parse(content);
         }
-        if (keys.length > maxEntries) {
-            // Simple LRU: remove oldest by sort (keys have no timestamp, so remove first)
-            keys.slice(0, keys.length - maxEntries).forEach(k => localStorage.removeItem(k));
+    } catch (e) {
+        lyricsCache = {};
+    }
+}
+
+async function saveLyricsCache() {
+    try {
+        await Neutralino.filesystem.writeFile('lyrics_cache.json', JSON.stringify(lyricsCache, null, 2));
+    } catch (e) {
+        console.error("Failed to save lyrics_cache.json", e);
+    }
+}
+
+async function getCachedLyrics(trackName, artistName) {
+    const key = `${trackName.toLowerCase()} - ${artistName.toLowerCase()}`;
+    if (lyricsCache[key]) {
+        lyricsCache[key].last_accessed = Date.now();
+        await saveLyricsCache();
+        return lyricsCache[key].data;
+    }
+    return null;
+}
+
+async function cacheLyrics(trackName, artistName, data) {
+    const key = `${trackName.toLowerCase()} - ${artistName.toLowerCase()}`;
+    const keys = Object.keys(lyricsCache);
+    if (keys.length >= 50) {
+        let oldestKey = null;
+        let oldestTime = Infinity;
+        for (let k of keys) {
+            const time = lyricsCache[k].last_accessed || 0;
+            if (time < oldestTime) {
+                oldestTime = time;
+                oldestKey = k;
+            }
         }
-    } catch {}
+        if (oldestKey) {
+            delete lyricsCache[oldestKey];
+        }
+    }
+    lyricsCache[key] = {
+        last_accessed: Date.now(),
+        data: data
+    };
+    await saveLyricsCache();
 }
 
 function startPlaybackMonitoring() {
@@ -681,16 +722,12 @@ function startPlaybackMonitoring() {
                 const songInfo = `${track.name} - ${track.artists.map(a=>a.name).join(', ')}`;
                 updateUI(songInfo, 'Searching for lyrics...');
                 lastActiveIndex = -1;
-                const cacheKey = `lyrics_cache_${trackId}`;
-                const cached = localStorage.getItem(cacheKey);
+                const cached = await getCachedLyrics(track.name, track.artists[0].name);
                 if (cached) {
-                    try {
-                        const result = JSON.parse(cached);
-                        parsedLyrics = result.lines;
-                        renderLyrics(parsedLyrics);
-                        updateUI(songInfo, null);
-                        return;
-                    } catch {}
+                    parsedLyrics = cached.lines;
+                    renderLyrics(parsedLyrics);
+                    updateUI(songInfo, null);
+                    return;
                 }
                 const result = await fetchLyrics(track.name, track.artists[0].name);
                 parsedLyrics = result.lines;
@@ -698,7 +735,7 @@ function startPlaybackMonitoring() {
                 updateUI(songInfo, null);
                 const isError = result.lines.length===0 || (result.lines.length===1 && result.lines[0].text==="Lyrics not found for this track.");
                 if (!isError) {
-                    try { localStorage.setItem(cacheKey, JSON.stringify(result)); evictLyricsCache(); } catch {}
+                    try { await cacheLyrics(track.name, track.artists[0].name, result); } catch {}
                 }
             }
         } catch (err) { console.error('Playback poll error', err); }
@@ -816,6 +853,7 @@ window.addEventListener('blur', stopResizing);
 
 async function onStart() {
     await loadConfig();
+    await loadLyricsCache();
     await restoreWindowGeometry();
     applySettings();
     await loadEnv();

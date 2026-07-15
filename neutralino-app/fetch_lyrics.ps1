@@ -159,68 +159,199 @@ function Get-LyricsOvh([string]$track, [string]$artist) {
     return $null
 }
 
-# --- PASS 1: Exact Version Match ---
-if ($originalTrack -ne $cleanTrack) {
-    foreach ($p in $providers) {
+# --- Split providers into Tier 1 and Tier 2 based on user priorities ---
+$tier1 = @()
+$tier2 = @()
+foreach ($p in $providers) {
+    if ($p -eq "lrclib" -or $p -eq "netease") {
+        $tier1 += $p
+    } elseif ($p -eq "musixmatch" -or $p -eq "lyricsovh") {
+        $tier2 += $p
+    }
+}
+
+# --- Parallel Scraper Helper ---
+function Invoke-ScrapersInParallel {
+    param(
+        [string[]]$TargetProviders,
+        [string]$Track,
+        [string]$Artist,
+        [int]$TimeoutMs = 2000
+    )
+    
+    $instances = @()
+    $pool = [runspacefactory]::CreateRunspacePool(1, $TargetProviders.Length)
+    $pool.Open()
+
+    $headersDef = "`$commonHeaders = @{ 'User-Agent' = 'Spotify-Lyrics-Overlay/2.0 (Neutralinojs)' }"
+
+    foreach ($p in $TargetProviders) {
+        $funcDef = ""
+        $execCall = ""
+        
         if ($p -eq "lrclib") {
-            $lrclibObj = Get-LrclibLyrics $originalTrack $cleanArtist
-            if ($lrclibObj -and $lrclibObj.syncedLyrics) {
-                $Output.synced = $true; $Output.lyrics = $lrclibObj.syncedLyrics
-                $Output | ConvertTo-Json -Compress; exit
-            } elseif ($lrclibObj -and $lrclibObj.plainLyrics -and -not $plainFallback) {
-                $plainFallback = $lrclibObj.plainLyrics
-            }
+            $funcDef = "function Get-LrclibLyrics { " + $Function:Get-LrclibLyrics.ToString() + " }"
+            $execCall = "Get-LrclibLyrics `"$Track`" `"$Artist`""
         } elseif ($p -eq "netease") {
-            $neteaseLrc = Get-NetEaseLyrics $originalTrack $cleanArtist
-            if ($neteaseLrc) {
-                $Output.synced = $true; $Output.lyrics = $neteaseLrc
-                $Output | ConvertTo-Json -Compress; exit
-            }
+            $funcDef = "function Get-NetEaseLyrics { " + $Function:Get-NetEaseLyrics.ToString() + " }"
+            $execCall = "Get-NetEaseLyrics `"$Track`" `"$Artist`""
         } elseif ($p -eq "musixmatch") {
-            $mmObj = Get-MusixmatchLyrics $originalTrack $cleanArtist
-            if ($mmObj -and $mmObj.synced) {
-                $Output.synced = $true; $Output.lyrics = $mmObj.lyrics
-                $Output | ConvertTo-Json -Compress; exit
-            } elseif ($mmObj -and $mmObj.lyrics -and -not $plainFallback) {
-                $plainFallback = $mmObj.lyrics
+            $funcDef = "function Get-MusixmatchLyrics { " + $Function:Get-MusixmatchLyrics.ToString() + " }"
+            $execCall = "Get-MusixmatchLyrics `"$Track`" `"$Artist`""
+        } elseif ($p -eq "lyricsovh") {
+            $funcDef = "function Get-LyricsOvh { " + $Function:Get-LyricsOvh.ToString() + " }"
+            $execCall = "Get-LyricsOvh `"$Track`" `"$Artist`""
+        }
+
+        if ($funcDef -eq "") { continue }
+
+        $script = @"
+$headersDef
+$funcDef
+$execCall
+"@
+        
+        $powershell = [powershell]::Create().AddScript($script)
+        $powershell.RunspacePool = $pool
+        $handle = $powershell.BeginInvoke()
+        $instances += [PSCustomObject]@{
+            Provider = $p
+            PowerShell = $powershell
+            Handle = $handle
+        }
+    }
+
+    # Wait for completion or timeout
+    $elapsed = 0
+    $interval = 50
+    while ($elapsed -lt $TimeoutMs) {
+        $completedCount = 0
+        foreach ($inst in $instances) {
+            if ($inst.Handle.IsCompleted) {
+                $completedCount++
+            }
+        }
+        if ($completedCount -eq $instances.Length) { break }
+        Start-Sleep -Milliseconds $interval
+        $elapsed += $interval
+    }
+
+    # Gather results
+    $results = @{}
+    foreach ($inst in $instances) {
+        if ($inst.Handle.IsCompleted) {
+            try {
+                $res = $inst.PowerShell.EndInvoke($inst.Handle)
+                if ($res) {
+                    $results[$inst.Provider] = $res[0]
+                }
+            } catch {}
+        } else {
+            try { $inst.PowerShell.Stop() } catch {}
+        }
+        $inst.PowerShell.Dispose()
+    }
+    $pool.Close()
+    $pool.Dispose()
+
+    return $results
+}
+
+# --- Lyrics Preference Helper ---
+function Select-BestLyrics {
+    param(
+        [hashtable]$Results,
+        [string[]]$PriorityList
+    )
+    
+    foreach ($p in $PriorityList) {
+        if (-not $Results.ContainsKey($p)) { continue }
+        $res = $Results[$p]
+        if ($p -eq "lrclib" -and $res -and $res.syncedLyrics) {
+            return @{ synced = $true; lyrics = $res.syncedLyrics }
+        } elseif ($p -eq "netease" -and $res) {
+            return @{ synced = $true; lyrics = $res }
+        } elseif ($p -eq "musixmatch" -and $res -and $res.synced) {
+            return @{ synced = $true; lyrics = $res.lyrics }
+        }
+    }
+    
+    foreach ($p in $PriorityList) {
+        if (-not $Results.ContainsKey($p)) { continue }
+        $res = $Results[$p]
+        if ($p -eq "lrclib" -and $res -and $res.plainLyrics) {
+            return @{ synced = $false; lyrics = $res.plainLyrics }
+        } elseif ($p -eq "musixmatch" -and $res -and -not $res.synced) {
+            return @{ synced = $false; lyrics = $res.lyrics }
+        } elseif ($p -eq "lyricsovh" -and $res) {
+            return @{ synced = $false; lyrics = $res }
+        }
+    }
+    
+    return $null
+}
+
+# --- PASS 1: Exact Version Match ---
+$bestResult = $null
+if ($originalTrack -ne $cleanTrack) {
+    if ($tier1.Length -gt 0) {
+        $results1 = Invoke-ScrapersInParallel $tier1 $originalTrack $cleanArtist 2000
+        $bestResult = Select-BestLyrics $results1 $tier1
+    }
+    
+    if (-not $bestResult -or -not $bestResult.synced) {
+        if ($tier2.Length -gt 0) {
+            $results2 = Invoke-ScrapersInParallel $tier2 $originalTrack $cleanArtist 2000
+            $bestResult2 = Select-BestLyrics $results2 $tier2
+            if ($bestResult2 -and ($bestResult2.synced -or -not $bestResult)) {
+                $bestResult = $bestResult2
             }
         }
     }
 }
 
+if ($bestResult -and $bestResult.synced) {
+    $Output.synced = $true
+    $Output.lyrics = $bestResult.lyrics
+    $Output | ConvertTo-Json -Compress
+    exit
+}
+
 # --- PASS 2: Main Title Match ---
-foreach ($p in $providers) {
-    if ($p -eq "lrclib") {
-        $lrclibObj = Get-LrclibLyrics $cleanTrack $cleanArtist
-        if ($lrclibObj -and $lrclibObj.syncedLyrics) {
-            $Output.synced = $true; $Output.lyrics = $lrclibObj.syncedLyrics
-            $Output | ConvertTo-Json -Compress; exit
-        } elseif ($lrclibObj -and $lrclibObj.plainLyrics -and -not $plainFallback) {
-            $plainFallback = $lrclibObj.plainLyrics
-        }
-    } elseif ($p -eq "netease") {
-        $neteaseLrc = Get-NetEaseLyrics $cleanTrack $cleanArtist
-        if ($neteaseLrc) {
-            $Output.synced = $true; $Output.lyrics = $neteaseLrc
-            $Output | ConvertTo-Json -Compress; exit
-        }
-    } elseif ($p -eq "musixmatch") {
-        $mmObj = Get-MusixmatchLyrics $cleanTrack $cleanArtist
-        if ($mmObj -and $mmObj.synced) {
-            $Output.synced = $true; $Output.lyrics = $mmObj.lyrics
-            $Output | ConvertTo-Json -Compress; exit
-        } elseif ($mmObj -and $mmObj.lyrics -and -not $plainFallback) {
-            $plainFallback = $mmObj.lyrics
-        }
-    } elseif ($p -eq "lyricsovh") {
-        if (-not $plainFallback) {
-            $plainFallback = Get-LyricsOvh $cleanTrack $cleanArtist
-        }
+$plainFallback = $null
+if ($bestResult -and -not $bestResult.synced) {
+    $plainFallback = $bestResult.lyrics
+}
+
+if ($tier1.Length -gt 0) {
+    $results1 = Invoke-ScrapersInParallel $tier1 $cleanTrack $cleanArtist 2000
+    $cleanBest1 = Select-BestLyrics $results1 $tier1
+    if ($cleanBest1 -and $cleanBest1.synced) {
+        $Output.synced = $true
+        $Output.lyrics = $cleanBest1.lyrics
+        $Output | ConvertTo-Json -Compress
+        exit
+    } elseif ($cleanBest1 -and -not $plainFallback) {
+        $plainFallback = $cleanBest1.lyrics
+    }
+}
+
+if ($tier2.Length -gt 0) {
+    $results2 = Invoke-ScrapersInParallel $tier2 $cleanTrack $cleanArtist 2000
+    $cleanBest2 = Select-BestLyrics $results2 $tier2
+    if ($cleanBest2 -and $cleanBest2.synced) {
+        $Output.synced = $true
+        $Output.lyrics = $cleanBest2.lyrics
+        $Output | ConvertTo-Json -Compress
+        exit
+    } elseif ($cleanBest2 -and -not $plainFallback) {
+        $plainFallback = $cleanBest2.lyrics
     }
 }
 
 if ($plainFallback) {
-    $Output.synced = $false; $Output.lyrics = $plainFallback
+    $Output.synced = $false
+    $Output.lyrics = $plainFallback
 }
 
 $Output | ConvertTo-Json -Compress
