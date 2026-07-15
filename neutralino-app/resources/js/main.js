@@ -58,29 +58,59 @@ if (lockBtn) lockBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (settingsBtn) settingsBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (settingsPanel) settingsPanel.addEventListener('mousedown', (e) => e.stopPropagation());
 
-async function saveWindowGeometry() {
+let currentConfig = {
+    window_width: 600,
+    window_height: 400,
+    window_x: 100,
+    window_y: 100,
+    always_on_top: true,
+    window_opacity: 80,
+    window_blur: 12,
+    font_size: 18,
+    font_family: "Inter",
+    line_scale: 1.2,
+    sync_offset: 0,
+    theme: "dark",
+    provider_order: ["lrclib", "netease", "musixmatch", "lyricsovh"]
+};
+
+async function loadConfig() {
     try {
-        const size = await Neutralino.window.getSize();
-        const pos = await Neutralino.window.getPosition();
-        localStorage.setItem('window_width', size.width);
-        localStorage.setItem('window_height', size.height);
-        localStorage.setItem('window_x', pos.x);
-        localStorage.setItem('window_y', pos.y);
+        const content = await Neutralino.filesystem.readFile('config.json');
+        if (content) {
+            currentConfig = { ...currentConfig, ...JSON.parse(content) };
+            isAlwaysOnTop = currentConfig.always_on_top;
+        }
     } catch (e) {
-        console.error('Failed to save window geometry', e);
+        console.log("No config.json found. Using defaults.");
     }
 }
+
+async function saveConfig() {
+    try {
+        let size = { width: 600, height: 400 };
+        let pos = { x: 100, y: 100 };
+        if (window.NL_MODE === 'window') {
+            try {
+                size = await Neutralino.window.getSize();
+                pos = await Neutralino.window.getPosition();
+                currentConfig.window_width = size.width;
+                currentConfig.window_height = size.height;
+                currentConfig.window_x = pos.x;
+                currentConfig.window_y = pos.y;
+            } catch (err) {}
+        }
+        await Neutralino.filesystem.writeFile('config.json', JSON.stringify(currentConfig, null, 2));
+    } catch (e) {
+        console.error("Failed to save config.json", e);
+    }
+}
+
 async function restoreWindowGeometry() {
     try {
-        const w = localStorage.getItem('window_width');
-        const h = localStorage.getItem('window_height');
-        const x = localStorage.getItem('window_x');
-        const y = localStorage.getItem('window_y');
-        if (w && h) {
-            await Neutralino.window.setSize({ width: parseInt(w,10), height: parseInt(h,10) });
-        }
-        if (x !== null && y !== null) {
-            await Neutralino.window.move(parseInt(x,10), parseInt(y,10));
+        if (window.NL_MODE === 'window') {
+            await Neutralino.window.setSize({ width: currentConfig.window_width, height: currentConfig.window_height });
+            await Neutralino.window.move(currentConfig.window_x, currentConfig.window_y);
         }
     } catch (e) {
         console.error('Failed to restore window geometry', e);
@@ -88,7 +118,7 @@ async function restoreWindowGeometry() {
 }
 
 async function handleExit() {
-    try { await saveWindowGeometry(); } catch (e) {}
+    try { await saveConfig(); } catch (e) {}
     Neutralino.app.exit();
 }
 
@@ -115,22 +145,29 @@ function applyOpacity(val) {
     if (!lyricsContainer) return;
     lyricsContainer.style.opacity = val / 100;
     if (opacityVal) opacityVal.innerText = `${val}%`;
-    localStorage.setItem('window_opacity', val);
 }
 
+// Blur Logic
 function applyBlur(val) {
     if (!lyricsContainer) return;
     lyricsContainer.style.backdropFilter = `blur(${val}px)`;
     lyricsContainer.style.webkitBackdropFilter = `blur(${val}px)`;
     if (blurVal) blurVal.innerText = `${val}px`;
-    localStorage.setItem('window_blur', val);
 }
 
 if (opacitySlider) {
-    opacitySlider.addEventListener('input', (e) => applyOpacity(e.target.value));
+    opacitySlider.addEventListener('input', async (e) => {
+        currentConfig.window_opacity = parseInt(e.target.value, 10);
+        applyOpacity(e.target.value);
+        await saveConfig();
+    });
 }
 if (blurSlider) {
-    blurSlider.addEventListener('input', (e) => applyBlur(e.target.value));
+    blurSlider.addEventListener('input', async (e) => {
+        currentConfig.window_blur = parseInt(e.target.value, 10);
+        applyBlur(e.target.value);
+        await saveConfig();
+    });
 }
 
 // Button controls UI updates & toggle handlers
@@ -185,9 +222,10 @@ async function disableClickThrough() {
 if (pinBtn) {
     pinBtn.addEventListener('click', async () => {
         isAlwaysOnTop = !isAlwaysOnTop;
+        currentConfig.always_on_top = isAlwaysOnTop;
         await Neutralino.window.setAlwaysOnTop(isAlwaysOnTop);
-        localStorage.setItem('always_on_top', isAlwaysOnTop.toString());
         updatePinButton();
+        await saveConfig();
     });
 }
 
@@ -249,15 +287,17 @@ Neutralino.events.on("trayMenuItemClicked", async (event) => {
             break;
         case "PIN":
             isAlwaysOnTop = true;
+            currentConfig.always_on_top = true;
             await Neutralino.window.setAlwaysOnTop(true);
-            localStorage.setItem('always_on_top', 'true');
             updatePinButton();
+            await saveConfig();
             break;
         case "UNPIN":
             isAlwaysOnTop = false;
+            currentConfig.always_on_top = false;
             await Neutralino.window.setAlwaysOnTop(false);
-            localStorage.setItem('always_on_top', 'false');
             updatePinButton();
+            await saveConfig();
             break;
         case "LOCK":
             await enableClickThrough();
@@ -273,22 +313,171 @@ Neutralino.events.on("trayMenuItemClicked", async (event) => {
 
 setupSystemTray();
 
-function restoreSettings() {
-    const savedPin = localStorage.getItem('always_on_top');
-    if (savedPin !== null) {
-        isAlwaysOnTop = (savedPin === 'true');
-        Neutralino.window.setAlwaysOnTop(isAlwaysOnTop);
+function renderProviderList() {
+    const providerListEl = document.getElementById('provider-list');
+    if (!providerListEl) return;
+    providerListEl.innerHTML = '';
+    currentConfig.provider_order.forEach((provider, index) => {
+        const item = document.createElement('div');
+        item.className = 'provider-item';
+        item.addEventListener('mousedown', (e) => e.stopPropagation());
+        
+        const name = document.createElement('span');
+        name.className = 'provider-name';
+        name.innerText = provider === 'lyricsovh' ? 'Lyrics.ovh' : provider;
+        item.appendChild(name);
+
+        const controls = document.createElement('div');
+        controls.className = 'provider-controls';
+
+        if (index > 0) {
+            const upBtn = document.createElement('button');
+            upBtn.className = 'order-btn';
+            upBtn.innerText = '▲';
+            upBtn.title = 'Move Up';
+            upBtn.addEventListener('click', async () => {
+                const temp = currentConfig.provider_order[index];
+                currentConfig.provider_order[index] = currentConfig.provider_order[index - 1];
+                currentConfig.provider_order[index - 1] = temp;
+                renderProviderList();
+                await saveConfig();
+            });
+            controls.appendChild(upBtn);
+        }
+
+        if (index < currentConfig.provider_order.length - 1) {
+            const downBtn = document.createElement('button');
+            downBtn.className = 'order-btn';
+            downBtn.innerText = '▼';
+            downBtn.title = 'Move Down';
+            downBtn.addEventListener('click', async () => {
+                const temp = currentConfig.provider_order[index];
+                currentConfig.provider_order[index] = currentConfig.provider_order[index + 1];
+                currentConfig.provider_order[index + 1] = temp;
+                renderProviderList();
+                await saveConfig();
+            });
+            controls.appendChild(downBtn);
+        }
+
+        item.appendChild(controls);
+        providerListEl.appendChild(item);
+    });
+}
+
+function applySettings() {
+    if (window.NL_MODE === 'window') {
+        Neutralino.window.setAlwaysOnTop(currentConfig.always_on_top);
     }
     updatePinButton();
     updateLockButton();
 
-    const savedOpacity = localStorage.getItem('window_opacity') || '80';
-    if (opacitySlider) opacitySlider.value = savedOpacity;
-    applyOpacity(savedOpacity);
+    applyOpacity(currentConfig.window_opacity);
+    if (opacitySlider) opacitySlider.value = currentConfig.window_opacity;
+    if (opacityVal) opacityVal.innerText = `${currentConfig.window_opacity}%`;
 
-    const savedBlur = localStorage.getItem('window_blur') || '12';
-    if (blurSlider) blurSlider.value = savedBlur;
-    applyBlur(savedBlur);
+    applyBlur(currentConfig.window_blur);
+    if (blurSlider) blurSlider.value = currentConfig.window_blur;
+    if (blurVal) blurVal.innerText = `${currentConfig.window_blur}px`;
+
+    document.documentElement.style.setProperty('--font-family', `'${currentConfig.font_family}', sans-serif`);
+    const familySelect = document.getElementById('font-family-select');
+    if (familySelect) familySelect.value = currentConfig.font_family;
+
+    document.documentElement.style.setProperty('--font-size', `${currentConfig.font_size}px`);
+    const sizeSlider = document.getElementById('font-size-slider');
+    if (sizeSlider) sizeSlider.value = currentConfig.font_size;
+    const sizeVal = document.getElementById('font-size-val');
+    if (sizeVal) sizeVal.innerText = `${currentConfig.font_size}px`;
+
+    document.documentElement.style.setProperty('--active-scale', currentConfig.line_scale);
+    const r12 = document.getElementById('line-scale-12');
+    const r15 = document.getElementById('line-scale-15');
+    if (currentConfig.line_scale === 1.5) {
+        if (r15) r15.checked = true;
+    } else {
+        if (r12) r12.checked = true;
+    }
+
+    const offsetSlider = document.getElementById('sync-offset-slider');
+    if (offsetSlider) offsetSlider.value = currentConfig.sync_offset;
+    const offsetVal = document.getElementById('sync-offset-val');
+    if (offsetVal) offsetVal.innerText = `${currentConfig.sync_offset > 0 ? '+' : ''}${currentConfig.sync_offset}ms`;
+
+    if (lyricsContainer) {
+        lyricsContainer.className = `theme-${currentConfig.theme}`;
+    }
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) themeSelect.value = currentConfig.theme;
+
+    renderProviderList();
+}
+
+// Bind UI changes
+const familySelect = document.getElementById('font-family-select');
+if (familySelect) {
+    familySelect.addEventListener('mousedown', (e) => e.stopPropagation());
+    familySelect.addEventListener('change', async (e) => {
+        currentConfig.font_family = e.target.value;
+        document.documentElement.style.setProperty('--font-family', `'${e.target.value}', sans-serif`);
+        await saveConfig();
+    });
+}
+
+const sizeSlider = document.getElementById('font-size-slider');
+if (sizeSlider) {
+    sizeSlider.addEventListener('mousedown', (e) => e.stopPropagation());
+    sizeSlider.addEventListener('input', async (e) => {
+        currentConfig.font_size = parseInt(e.target.value, 10);
+        document.documentElement.style.setProperty('--font-size', `${e.target.value}px`);
+        const sizeVal = document.getElementById('font-size-val');
+        if (sizeVal) sizeVal.innerText = `${e.target.value}px`;
+        await saveConfig();
+    });
+}
+
+const r12 = document.getElementById('line-scale-12');
+const r15 = document.getElementById('line-scale-15');
+if (r12) {
+    r12.addEventListener('mousedown', (e) => e.stopPropagation());
+    r12.addEventListener('change', async (e) => {
+        if (e.target.checked) {
+            currentConfig.line_scale = 1.2;
+            document.documentElement.style.setProperty('--active-scale', '1.2');
+            await saveConfig();
+        }
+    });
+}
+if (r15) {
+    r15.addEventListener('mousedown', (e) => e.stopPropagation());
+    r15.addEventListener('change', async (e) => {
+        if (e.target.checked) {
+            currentConfig.line_scale = 1.5;
+            document.documentElement.style.setProperty('--active-scale', '1.5');
+            await saveConfig();
+        }
+    });
+}
+
+const offsetSlider = document.getElementById('sync-offset-slider');
+if (offsetSlider) {
+    offsetSlider.addEventListener('mousedown', (e) => e.stopPropagation());
+    offsetSlider.addEventListener('input', async (e) => {
+        currentConfig.sync_offset = parseInt(e.target.value, 10);
+        const offsetVal = document.getElementById('sync-offset-val');
+        if (offsetVal) offsetVal.innerText = `${e.target.value > 0 ? '+' : ''}${e.target.value}ms`;
+        await saveConfig();
+    });
+}
+
+const themeSelect = document.getElementById('theme-select');
+if (themeSelect) {
+    themeSelect.addEventListener('mousedown', (e) => e.stopPropagation());
+    themeSelect.addEventListener('change', async (e) => {
+        currentConfig.theme = e.target.value;
+        if (lyricsContainer) lyricsContainer.className = `theme-${e.target.value}`;
+        await saveConfig();
+    });
 }
 
 // --- Secure helpers ---
@@ -519,7 +708,11 @@ function startPlaybackMonitoring() {
 async function fetchLyrics(trackName, artistName) {
     try {
         // Secure Base64 args - no shell interpolation of track names
-        const payload = btoa(JSON.stringify({ track: trackName.substring(0,200), artist: artistName.substring(0,200) }));
+        const payload = btoa(JSON.stringify({
+            track: trackName.substring(0,200),
+            artist: artistName.substring(0,200),
+            providers: currentConfig.provider_order
+        }));
         const command = `chcp 65001 >nul && powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${window.NL_PATH}/fetch_lyrics.ps1" -EncodedArgs ${payload}`;
         const result = await Neutralino.os.execCommand(command);
         if (!result.stdOut) throw new Error('Empty lyrics response');
@@ -569,7 +762,7 @@ function startLyricsSyncLoop() {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     function update() {
         if (accessToken && parsedLyrics.length>0) {
-            let currentProgress = progressMsLastPoll;
+            let currentProgress = progressMsLastPoll + currentConfig.sync_offset;
             if (isPlaying) currentProgress += (Date.now() - timestampLastPoll);
             highlightActiveLyric(currentProgress);
         }
@@ -622,8 +815,9 @@ resizeHandle.addEventListener('pointercancel', stopResizing);
 window.addEventListener('blur', stopResizing);
 
 async function onStart() {
+    await loadConfig();
     await restoreWindowGeometry();
-    restoreSettings();
+    applySettings();
     await loadEnv();
     if (!spotifyClientId) {
         if (setupSection) setupSection.style.display = 'flex';

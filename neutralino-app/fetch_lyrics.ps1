@@ -21,6 +21,13 @@ try {
     $decoded = $jsonStr | ConvertFrom-Json
     $trackName = $decoded.track.ToString().Substring(0, [Math]::Min(200, $decoded.track.ToString().Length)).Trim()
     $artistName = $decoded.artist.ToString().Substring(0, [Math]::Min(200, $decoded.artist.ToString().Length)).Trim()
+    
+    [string[]]$providers = @()
+    if ($decoded.providers) {
+        $providers = [string[]]($decoded.providers)
+    } else {
+        $providers = @("lrclib", "netease", "musixmatch", "lyricsovh")
+    }
 } catch {
     $Output | ConvertTo-Json -Compress
     exit
@@ -154,34 +161,66 @@ function Get-LyricsOvh([string]$track, [string]$artist) {
 
 # --- PASS 1: Exact Version Match ---
 if ($originalTrack -ne $cleanTrack) {
-    $lrclibObj = Get-LrclibLyrics $originalTrack $cleanArtist
-    if ($lrclibObj -and $lrclibObj.syncedLyrics) {
-        $Output.synced = $true; $Output.lyrics = $lrclibObj.syncedLyrics
-        $Output | ConvertTo-Json -Compress; exit
-    } elseif ($lrclibObj -and $lrclibObj.plainLyrics) { $plainFallback = $lrclibObj.plainLyrics }
-
-    $neteaseLrc = Get-NetEaseLyrics $originalTrack $cleanArtist
-    if ($neteaseLrc) { $Output.synced = $true; $Output.lyrics = $neteaseLrc; $Output | ConvertTo-Json -Compress; exit }
-
-    $mmObj = Get-MusixmatchLyrics $originalTrack $cleanArtist
-    if ($mmObj -and $mmObj.synced) { $Output.synced = $true; $Output.lyrics = $mmObj.lyrics; $Output | ConvertTo-Json -Compress; exit }
-    elseif ($mmObj -and $mmObj.lyrics -and -not $plainFallback) { $plainFallback = $mmObj.lyrics }
+    foreach ($p in $providers) {
+        if ($p -eq "lrclib") {
+            $lrclibObj = Get-LrclibLyrics $originalTrack $cleanArtist
+            if ($lrclibObj -and $lrclibObj.syncedLyrics) {
+                $Output.synced = $true; $Output.lyrics = $lrclibObj.syncedLyrics
+                $Output | ConvertTo-Json -Compress; exit
+            } elseif ($lrclibObj -and $lrclibObj.plainLyrics -and -not $plainFallback) {
+                $plainFallback = $lrclibObj.plainLyrics
+            }
+        } elseif ($p -eq "netease") {
+            $neteaseLrc = Get-NetEaseLyrics $originalTrack $cleanArtist
+            if ($neteaseLrc) {
+                $Output.synced = $true; $Output.lyrics = $neteaseLrc
+                $Output | ConvertTo-Json -Compress; exit
+            }
+        } elseif ($p -eq "musixmatch") {
+            $mmObj = Get-MusixmatchLyrics $originalTrack $cleanArtist
+            if ($mmObj -and $mmObj.synced) {
+                $Output.synced = $true; $Output.lyrics = $mmObj.lyrics
+                $Output | ConvertTo-Json -Compress; exit
+            } elseif ($mmObj -and $mmObj.lyrics -and -not $plainFallback) {
+                $plainFallback = $mmObj.lyrics
+            }
+        }
+    }
 }
 
 # --- PASS 2: Main Title Match ---
-$lrclibObj = Get-LrclibLyrics $cleanTrack $cleanArtist
-if ($lrclibObj -and $lrclibObj.syncedLyrics) { $Output.synced = $true; $Output.lyrics = $lrclibObj.syncedLyrics; $Output | ConvertTo-Json -Compress; exit }
-elseif ($lrclibObj -and $lrclibObj.plainLyrics -and -not $plainFallback) { $plainFallback = $lrclibObj.plainLyrics }
+foreach ($p in $providers) {
+    if ($p -eq "lrclib") {
+        $lrclibObj = Get-LrclibLyrics $cleanTrack $cleanArtist
+        if ($lrclibObj -and $lrclibObj.syncedLyrics) {
+            $Output.synced = $true; $Output.lyrics = $lrclibObj.syncedLyrics
+            $Output | ConvertTo-Json -Compress; exit
+        } elseif ($lrclibObj -and $lrclibObj.plainLyrics -and -not $plainFallback) {
+            $plainFallback = $lrclibObj.plainLyrics
+        }
+    } elseif ($p -eq "netease") {
+        $neteaseLrc = Get-NetEaseLyrics $cleanTrack $cleanArtist
+        if ($neteaseLrc) {
+            $Output.synced = $true; $Output.lyrics = $neteaseLrc
+            $Output | ConvertTo-Json -Compress; exit
+        }
+    } elseif ($p -eq "musixmatch") {
+        $mmObj = Get-MusixmatchLyrics $cleanTrack $cleanArtist
+        if ($mmObj -and $mmObj.synced) {
+            $Output.synced = $true; $Output.lyrics = $mmObj.lyrics
+            $Output | ConvertTo-Json -Compress; exit
+        } elseif ($mmObj -and $mmObj.lyrics -and -not $plainFallback) {
+            $plainFallback = $mmObj.lyrics
+        }
+    } elseif ($p -eq "lyricsovh") {
+        if (-not $plainFallback) {
+            $plainFallback = Get-LyricsOvh $cleanTrack $cleanArtist
+        }
+    }
+}
 
-$neteaseLrc = Get-NetEaseLyrics $cleanTrack $cleanArtist
-if ($neteaseLrc) { $Output.synced = $true; $Output.lyrics = $neteaseLrc; $Output | ConvertTo-Json -Compress; exit }
-
-$mmObj = Get-MusixmatchLyrics $cleanTrack $cleanArtist
-if ($mmObj -and $mmObj.synced) { $Output.synced = $true; $Output.lyrics = $mmObj.lyrics; $Output | ConvertTo-Json -Compress; exit }
-elseif ($mmObj -and $mmObj.lyrics -and -not $plainFallback) { $plainFallback = $mmObj.lyrics }
-
-if (-not $plainFallback) { $plainFallback = Get-LyricsOvh $cleanTrack $cleanArtist }
-
-if ($plainFallback) { $Output.synced = $false; $Output.lyrics = $plainFallback }
+if ($plainFallback) {
+    $Output.synced = $false; $Output.lyrics = $plainFallback
+}
 
 $Output | ConvertTo-Json -Compress

@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.spotify.com https://accounts.spotify.com https://lrclib.net; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.spotify.com https://accounts.spotify.com https://lrclib.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline';">
     <title>Spotify Lyrics Overlay</title>
     <!-- Silence standard browser favicon.ico requests -->
     <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Poppins:wght@400;600;700&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -29,6 +32,45 @@
             <div class="slider-group">
                 <label>Blur: <span id="blur-val">12px</span></label>
                 <input type="range" id="blur-slider" min="0" max="25" value="12">
+            </div>
+            <div class="slider-group">
+                <label>Font Family:</label>
+                <select id="font-family-select">
+                    <option value="Segoe UI">Segoe UI</option>
+                    <option value="Inter">Inter</option>
+                    <option value="Sora">Sora</option>
+                    <option value="Poppins">Poppins</option>
+                </select>
+            </div>
+            <div class="slider-group">
+                <label>Font Size: <span id="font-size-val">18px</span></label>
+                <input type="range" id="font-size-slider" min="12" max="32" value="18">
+            </div>
+            <div class="slider-group">
+                <label>Line Scale:</label>
+                <div class="toggle-group">
+                    <label class="radio-label"><input type="radio" name="line-scale" id="line-scale-12" value="1.2" checked> 1.2x</label>
+                    <label class="radio-label"><input type="radio" name="line-scale" id="line-scale-15" value="1.5"> 1.5x</label>
+                </div>
+            </div>
+            <div class="slider-group">
+                <label>Sync Offset: <span id="sync-offset-val">0ms</span></label>
+                <input type="range" id="sync-offset-slider" min="-500" max="500" step="50" value="0">
+            </div>
+            <div class="slider-group">
+                <label>Theme:</label>
+                <select id="theme-select">
+                    <option value="dark">Dark</option>
+                    <option value="amoled">AMOLED</option>
+                    <option value="light">Light</option>
+                    <option value="transparent">Transparent</option>
+                </select>
+            </div>
+            <div class="provider-order-group">
+                <label class="section-label">Provider Priority:</label>
+                <div id="provider-list">
+                    <!-- Loaded dynamically via js -->
+                </div>
             </div>
         </div>
         

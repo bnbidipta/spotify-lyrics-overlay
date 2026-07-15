@@ -1,3 +1,9 @@
+:root {
+    --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --font-size: 18px;
+    --active-scale: 1.2;
+}
+
 html, body {
     width: 100%;
     height: 100%;
@@ -5,7 +11,7 @@ html, body {
     padding: 0;
     overflow: hidden;
     background: transparent;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: var(--font-family);
     user-select: none;
 }
 
@@ -104,7 +110,7 @@ html, body {
 }
 
 .lyric-line {
-    font-size: clamp(13px, 2.8vw, 19px);
+    font-size: var(--font-size);
     font-weight: 600;
     color: rgba(255, 255, 255, 0.45);
     transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
@@ -117,8 +123,7 @@ html, body {
 .lyric-line.active {
     color: #1DB954;
     opacity: 1;
-    transform: scale(1.08);
-    font-size: clamp(16px, 3.2vw, 22px);
+    transform: scale(var(--active-scale));
     font-weight: 700;
     text-shadow: 0 0 15px rgba(29, 185, 84, 0.4);
 }
@@ -351,4 +356,176 @@ html, body {
 @keyframes slideDown {
     from { opacity: 0; transform: translateY(-5px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* Theme Tokens */
+#lyrics-container.theme-dark {
+    background: rgba(18, 18, 18, 0.6);
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+#lyrics-container.theme-dark .lyric-line {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+#lyrics-container.theme-amoled {
+    background: rgba(0, 0, 0, 0.92);
+    color: white;
+    text-shadow: none;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+#lyrics-container.theme-amoled .lyric-line {
+    color: rgba(255, 255, 255, 0.35);
+}
+
+#lyrics-container.theme-light {
+    background: rgba(245, 245, 245, 0.75);
+    color: #121212;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+}
+#lyrics-container.theme-light .lyric-line {
+    color: rgba(0, 0, 0, 0.45);
+}
+#lyrics-container.theme-light #drag-handle {
+    color: rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+#lyrics-container.theme-light #close-btn {
+    color: rgba(0, 0, 0, 0.4);
+}
+#lyrics-container.theme-light #close-btn:hover {
+    color: rgba(0, 0, 0, 0.9);
+}
+
+#lyrics-container.theme-transparent {
+    background: transparent;
+    color: white;
+    text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    box-shadow: none;
+}
+#lyrics-container.theme-transparent .lyric-line {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+/* Expanded Settings Panel inputs styling */
+#settings-panel select {
+    background: rgba(40, 40, 40, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: white;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    outline: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+#settings-panel select:hover {
+    background: rgba(60, 60, 60, 0.8);
+}
+
+#lyrics-container.theme-light #settings-panel select {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    color: #121212;
+}
+
+.toggle-group {
+    display: flex;
+    gap: 12px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.radio-label input {
+    margin: 0;
+    cursor: pointer;
+}
+
+/* Reorderable List styling */
+.provider-order-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    margin-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 6px;
+}
+
+.section-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: left;
+    margin-bottom: 2px;
+}
+
+#lyrics-container.theme-light .section-label {
+    color: rgba(0, 0, 0, 0.5);
+}
+
+#provider-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+}
+
+.provider-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: white;
+}
+
+#lyrics-container.theme-light .provider-item {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    color: #121212;
+}
+
+.provider-name {
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.provider-controls {
+    display: flex;
+    gap: 6px;
+}
+
+.order-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+    transition: color 0.15s;
+}
+
+.order-btn:hover {
+    color: #1DB954;
+}
+
+#lyrics-container.theme-light .order-btn {
+    color: rgba(0, 0, 0, 0.5);
+}
+#lyrics-container.theme-light .order-btn:hover {
+    color: #1DB954;
 }
