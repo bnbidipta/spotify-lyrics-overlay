@@ -1,0 +1,11 @@
+{
+  "name": "spotify-lyrics-overlay",
+  "version": "2.1.0",
+  "description": "Spotify lyrics overlay application using Neutralinojs",
+  "scripts": {
+    "build": "neu build"
+  },
+  "devDependencies": {
+    "@neutralinojs/neu": "latest"
+  }
+}
