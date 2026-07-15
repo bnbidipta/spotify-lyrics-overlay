@@ -52,12 +52,42 @@ jobs:
           copy neutralino-app\secure_store.exe dist_release\secure_store.exe
           copy neutralino-app\window_utils.exe dist_release\window_utils.exe
 
+      - name: Sign Executables (Optional Code Signing)
+        if: ${{ secrets.SIGNING_CERT_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $certBytes = [System.Convert]::FromBase64String("${{ secrets.SIGNING_CERT_BASE64 }}")
+          [System.IO.File]::WriteAllBytes("cert.pfx", $certBytes)
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits" -Filter signtool.exe -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          & $signtool sign /f cert.pfx /p "${{ secrets.SIGNING_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\spotify-lyrics-overlay.exe
+          & $signtool sign /f cert.pfx /p "${{ secrets.SIGNING_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\auth_listener.exe
+          & $signtool sign /f cert.pfx /p "${{ secrets.SIGNING_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\fetch_lyrics.exe
+          & $signtool sign /f cert.pfx /p "${{ secrets.SIGNING_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\secure_store.exe
+          & $signtool sign /f cert.pfx /p "${{ secrets.SIGNING_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\window_utils.exe
+          Remove-Item cert.pfx -Force
+
       - name: Compress Release Archive
         run: |
           powershell -Command "Compress-Archive -Path dist_release\* -DestinationPath spotify-lyrics-overlay-windows.zip -Force"
 
-      - name: Upload Build Artifact
+      - name: Build Installer (Inno Setup)
+        run: |
+          iscc installer.iss
+
+      - name: Sign Installer Setup (Optional Code Signing)
+        if: ${{ secrets.SIGNING_CERT_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $certBytes = [System.Convert]::FromBase64String("${{ secrets.SIGNING_CERT_BASE64 }}")
+          [System.IO.File]::WriteAllBytes("cert.pfx", $certBytes)
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits" -Filter signtool.exe -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          & $signtool sign /f cert.pfx /p "${{ secrets.SIGNING_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 SpotifyLyricsOverlay-Setup-*.exe
+          Remove-Item cert.pfx -Force
+
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: spotify-lyrics-overlay-windows
-          path: spotify-lyrics-overlay-windows.zip
+          path: |
+            spotify-lyrics-overlay-windows.zip
+            SpotifyLyricsOverlay-Setup-*.exe

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.spotify.com https://accounts.spotify.com https://lrclib.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.spotify.com https://accounts.spotify.com https://lrclib.net https://api.github.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline';">
     <title>Spotify Lyrics Overlay</title>
     <!-- Silence standard browser favicon.ico requests -->
     <link rel="icon" href="data:,">
@@ -15,6 +15,13 @@
     <div id="lyrics-container">
         <!-- Drag handle -->
         <div id="drag-handle">Spotify Lyrics</div>
+        
+        <!-- Update Available Banner -->
+        <div id="update-banner" style="display: none;">
+            <span>A new update is available!</span>
+            <button id="update-link-btn" class="link-btn">Download</button>
+            <button id="update-close-btn" class="close-btn" title="Dismiss Update">&times;</button>
+        </div>
         
         <!-- Controls bar (Always on top, Click-through, Settings) -->
         <div id="controls-bar">

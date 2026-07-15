@@ -3,7 +3,7 @@ node_modules/
 
 # Env credentials (strictly ignored for security)
 .env
-neutralino-release/.env
+neutralino-release/
 
 # Compilation and build outputs
 dist/

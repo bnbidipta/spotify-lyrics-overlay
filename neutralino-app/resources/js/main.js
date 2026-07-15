@@ -43,6 +43,11 @@ const blurSlider = document.getElementById('blur-slider');
 const blurVal = document.getElementById('blur-val');
 const lyricsContainer = document.getElementById('lyrics-container');
 
+// Update elements
+const updateBanner = document.getElementById('update-banner');
+const updateLinkBtn = document.getElementById('update-link-btn');
+const updateCloseBtn = document.getElementById('update-close-btn');
+
 let isAlwaysOnTop = true;
 let isClickThrough = false;
 
@@ -53,6 +58,7 @@ closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 loginBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (getIdBtn) getIdBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (watchLoomBtn) watchLoomBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+if (updateBanner) updateBanner.addEventListener('mousedown', (e) => e.stopPropagation());
 if (pinBtn) pinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (lockBtn) lockBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (settingsBtn) settingsBtn.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -411,6 +417,43 @@ function applySettings() {
     if (themeSelect) themeSelect.value = currentConfig.theme;
 
     renderProviderList();
+}
+async function checkForUpdates() {
+    try {
+        const response = await fetch('https://api.github.com/repos/bnbidipta/spotify-lyrics-overlay/releases/latest');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data || !data.tag_name) return;
+        const latestTag = data.tag_name;
+        const latestVersion = latestTag.replace(/^v/, '');
+        const currentVersion = window.NL_APPVERSION;
+        
+        if (isNewerVersion(latestVersion, currentVersion)) {
+            if (updateBanner && updateLinkBtn && updateCloseBtn) {
+                updateBanner.style.display = 'flex';
+                updateLinkBtn.onclick = () => {
+                    Neutralino.os.open(data.html_url);
+                };
+                updateCloseBtn.onclick = () => {
+                    updateBanner.style.display = 'none';
+                };
+            }
+        }
+    } catch (e) {
+        console.error("Failed to check for updates", e);
+    }
+}
+
+function isNewerVersion(latest, current) {
+    const l = latest.split('.').map(Number);
+    const c = current.split('.').map(Number);
+    for (let i = 0; i < Math.max(l.length, c.length); i++) {
+        const lVal = l[i] || 0;
+        const cVal = c[i] || 0;
+        if (lVal > cVal) return true;
+        if (lVal < cVal) return false;
+    }
+    return false;
 }
 
 // Bind UI changes
@@ -856,6 +899,7 @@ async function onStart() {
     await loadLyricsCache();
     await restoreWindowGeometry();
     applySettings();
+    checkForUpdates();
     await loadEnv();
     if (!spotifyClientId) {
         if (setupSection) setupSection.style.display = 'flex';

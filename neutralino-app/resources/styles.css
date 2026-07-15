@@ -529,3 +529,70 @@ html, body {
 #lyrics-container.theme-light .order-btn:hover {
     color: #1DB954;
 }
+
+/* Update Banner */
+#update-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(29, 185, 84, 0.9);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 12px;
+    width: 90%;
+    margin: 4px auto 8px auto;
+    border-radius: 6px;
+    box-sizing: border-box;
+    z-index: 1100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    animation: slideDown 0.2s ease-out;
+}
+
+#update-banner span {
+    flex: 1;
+    text-align: left;
+}
+
+#update-banner .link-btn {
+    background: white;
+    color: #1DB954;
+    border: none;
+    padding: 3px 8px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-size: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    margin-right: 8px;
+    transition: background 0.15s, transform 0.1s;
+}
+
+#update-banner .link-btn:hover {
+    background: #eefbee;
+    transform: scale(1.05);
+}
+
+#update-banner .close-btn {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+    padding: 0 4px;
+}
+
+#update-banner .close-btn:hover {
+    opacity: 1;
+}
+
+#lyrics-container.theme-light #update-banner {
+    background: #1DB954;
+    color: white;
+}
+#lyrics-container.theme-light #update-banner .link-btn {
+    background: white;
+    color: #1DB954;
+}
