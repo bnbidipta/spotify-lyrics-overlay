@@ -1,6 +1,6 @@
 [Setup]
 AppName=Spotify Lyrics Overlay
-AppVersion=2.3.0
+AppVersion=2.5.2
 WizardStyle=modern
 DefaultDirName={localappdata}\Programs\SpotifyLyricsOverlay
 DefaultGroupName=Spotify Lyrics Overlay
@@ -8,7 +8,7 @@ UninstallDisplayIcon={app}\spotify-lyrics-overlay.exe
 Compression=lzma2
 SolidCompression=yes
 OutputDir=.
-OutputBaseFilename=SpotifyLyricsOverlay-Setup-2.3.0
+OutputBaseFilename=SpotifyLyricsOverlay-Setup-2.5.2
 PrivilegesRequired=lowest
 
 [Files]

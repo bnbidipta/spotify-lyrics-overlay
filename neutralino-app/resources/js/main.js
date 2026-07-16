@@ -83,7 +83,8 @@ let currentConfig = {
     line_scale: 1.2,
     sync_offset: 0,
     theme: "dark",
-    provider_order: ["lrclib", "netease", "lyricsovh"]
+    provider_order: ["lrclib", "netease", "lyricsovh"],
+    song_offsets: {}
 };
 
 async function loadConfig() {
@@ -517,9 +518,15 @@ const offsetSlider = document.getElementById('sync-offset-slider');
 if (offsetSlider) {
     offsetSlider.addEventListener('mousedown', (e) => e.stopPropagation());
     offsetSlider.addEventListener('input', async (e) => {
-        currentConfig.sync_offset = parseInt(e.target.value, 10);
+        const val = parseInt(e.target.value, 10);
+        if (lastTrackId) {
+            if (!currentConfig.song_offsets) currentConfig.song_offsets = {};
+            currentConfig.song_offsets[lastTrackId] = val;
+        } else {
+            currentConfig.sync_offset = val;
+        }
         const offsetVal = document.getElementById('sync-offset-val');
-        if (offsetVal) offsetVal.innerText = `${e.target.value > 0 ? '+' : ''}${e.target.value}ms`;
+        if (offsetVal) offsetVal.innerText = `${val > 0 ? '+' : ''}${val}ms`;
         await saveConfig();
     });
 }
@@ -1056,6 +1063,16 @@ function startPlaybackMonitoring() {
             const trackId = track.id;
             if (trackId !== lastTrackId) {
                 lastTrackId = trackId;
+                
+                // Update sync offset slider for this track
+                const offset = (currentConfig.song_offsets && currentConfig.song_offsets[trackId] !== undefined)
+                    ? currentConfig.song_offsets[trackId]
+                    : currentConfig.sync_offset;
+                const offsetSlider = document.getElementById('sync-offset-slider');
+                if (offsetSlider) offsetSlider.value = offset;
+                const offsetVal = document.getElementById('sync-offset-val');
+                if (offsetVal) offsetVal.innerText = `${offset > 0 ? '+' : ''}${offset}ms`;
+
                 const songInfo = `${track.name} - ${track.artists.map(a=>a.name).join(', ')}`;
                 updateUI(songInfo, 'Searching for lyrics...');
                 lastActiveIndex = -1;
@@ -1170,11 +1187,18 @@ function renderLyrics(parsedLines) {
     });
 }
 
+function getEffectiveSyncOffset() {
+    if (lastTrackId && currentConfig.song_offsets && currentConfig.song_offsets[lastTrackId] !== undefined) {
+        return currentConfig.song_offsets[lastTrackId];
+    }
+    return currentConfig.sync_offset;
+}
+
 function startLyricsSyncLoop() {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     function update() {
         if (accessToken) {
-            let currentProgress = progressMsLastPoll + currentConfig.sync_offset;
+            let currentProgress = progressMsLastPoll + getEffectiveSyncOffset();
             if (isPlaying) currentProgress += (Date.now() - timestampLastPoll);
             highlightActiveLyric(currentProgress);
 
