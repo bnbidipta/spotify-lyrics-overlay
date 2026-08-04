@@ -1,5 +1,15 @@
 # Spotify Lyrics Overlay
 
+<p align="center">
+  <a href="https://bnbidipta.github.io/spotify-lyrics-overlay/"><strong>🌐 Live Landing Page & Product Demo »</strong></a>
+</p>
+
+<p align="center">
+  <a href="https://bnbidipta.github.io/spotify-lyrics-overlay/"><img src="https://img.shields.io/badge/Size-1.9_MB-success.svg" alt="Size 1.9MB" /></a>
+  <a href="https://github.com/bnbidipta/spotify-lyrics-overlay/releases"><img src="https://img.shields.io/github/v/release/bnbidipta/spotify-lyrics-overlay.svg" alt="Release" /></a>
+  <a href="https://github.com/bnbidipta/spotify-lyrics-overlay/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License MIT" /></a>
+</p>
+
 An ultra-lightweight, highly customizable, and responsive desktop lyrics overlay for Spotify on Windows. Built using **Neutralinojs**, it leverages your system's native Edge/WebView2 rendering engine to display stunning glassmorphic, Apple Music-style synchronized scrolling lyrics at a tiny size of **under 2 Megabytes** (a 98% reduction from its original 91.6MB Electron implementation).
 
 <p align="center">

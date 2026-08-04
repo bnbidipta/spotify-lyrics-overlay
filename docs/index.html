@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Lyrics Overlay | 2MB Desktop Lyrics App that Actually Syncs</title>
+    <meta name="description" content="Ultra-lightweight, zero-bloat Spotify lyrics overlay for Windows. 2MB size, Apple Music-style karaoke sync, 4-provider fallback pipeline, and OBS streamer mode.">
+    
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://bnbidipta.github.io/spotify-lyrics-overlay/">
+    <meta property="og:title" content="2MB Spotify lyrics overlay that actually syncs">
+    <meta property="og:description" content="Ultra-lightweight, zero-bloat Desktop Overlay for Spotify. Built with Neutralinojs native Webview engine.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/bnbidipta/spotify-lyrics-overlay/main/preview.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:title" content="2MB Spotify lyrics overlay that actually syncs">
+    <meta property="twitter:description" content="Ultra-lightweight, zero-bloat Desktop Overlay for Spotify. Built with Neutralinojs native Webview engine.">
+    <meta property="twitter:image" content="https://raw.githubusercontent.com/bnbidipta/spotify-lyrics-overlay/main/preview.png">
+
+    <!-- Fonts & Styling -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Background Glow Elements -->
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+
+    <!-- Navigation Header -->
+    <header class="navbar">
+        <div class="container nav-container">
+            <a href="#" class="brand">
+                <div class="brand-logo">🎵</div>
+                <span class="brand-name">Spotify Lyrics Overlay</span>
+                <span class="badge-size">2 MB</span>
+            </a>
+            <nav class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#comparison">Why 2MB?</a>
+                <a href="#obs">OBS Mode</a>
+                <a href="#faq">FAQ</a>
+                <a href="https://github.com/bnbidipta/spotify-lyrics-overlay" target="_blank" rel="noopener" class="github-link">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                    <span>GitHub</span>
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container hero-container">
+            <div class="hero-badge">
+                <span class="pulse-dot"></span> v2.8.0 Release Out Now
+            </div>
+            <h1 class="hero-title">2MB Spotify lyrics overlay that <span class="gradient-text">actually syncs</span>.</h1>
+            <p class="hero-subtitle">
+                An ultra-lightweight desktop overlay for Spotify. Apple Music-style karaoke sync, 4-level scraper fallback pipeline, zero background resource bloat, and instant OBS browser integration.
+            </p>
+            
+            <div class="hero-cta-group">
+                <a id="primary-download-btn" href="https://github.com/bnbidipta/spotify-lyrics-overlay/releases/latest" class="btn btn-primary btn-large">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span id="btn-text">Download for Windows x64</span>
+                </a>
+                <a href="https://github.com/bnbidipta/spotify-lyrics-overlay/releases" class="btn btn-secondary btn-large">
+                    <span>View All Releases</span>
+                </a>
+            </div>
+            
+            <div id="os-detect-hint" class="os-hint">
+                <span class="icon">💻</span> Direct Installer (v2.8.0) • Lightweight Neutralino Engine (1.9MB)
+            </div>
+
+            <!-- Interactive Mockup Demo Container -->
+            <div class="hero-mockup-wrapper">
+                <div class="mockup-frame">
+                    <div class="mockup-header">
+                        <div class="window-controls">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <div class="mockup-title">
+                            <img src="https://raw.githubusercontent.com/bnbidipta/spotify-lyrics-overlay/main/preview.png" alt="Icon" class="mini-art" onerror="this.style.display='none'">
+                            <span>The Weeknd - Blinding Lights</span>
+                        </div>
+                        <div class="mockup-action-btn">⚙️</div>
+                    </div>
+                    <div class="mockup-progress-bar">
+                        <div class="mockup-progress-fill" style="width: 48%;"></div>
+                    </div>
+                    <div class="mockup-body">
+                        <div class="mockup-lyric-line dim">I've been on my own for long enough</div>
+                        <div class="mockup-lyric-line active">
+                            <span class="word active">I</span>
+                            <span class="word active">said,</span>
+                            <span class="word active">ooh,</span>
+                            <span class="word active">I'm</span>
+                            <span class="word active">blinded</span>
+                            <span class="word active">by</span>
+                            <span class="word active">the</span>
+                            <span class="word active">lights</span>
+                        </div>
+                        <div class="mockup-lyric-line dim">No, I can't sleep until I feel your touch</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="stats-section">
+        <div class="container stats-grid">
+            <div class="stat-card">
+                <div class="stat-value gradient-text">1.9 MB</div>
+                <div class="stat-label">Exe Bundle Size (vs 300MB)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value gradient-text">15 MB</div>
+                <div class="stat-label">RAM Usage in Background</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value gradient-text">4 Providers</div>
+                <div class="stat-label">Lrclib • NetEase • Musixmatch • Lyrics.ovh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value gradient-text">0.0 ms</div>
+                <div class="stat-label">Instant LRU Cache Recovery</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparison Section -->
+    <section id="comparison" class="comparison-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">The <span class="gradient-text">2MB vs 300MB</span> Difference</h2>
+                <p class="section-subtitle">Why load a massive Chromium browser process just to render a transparent text overlay?</p>
+            </div>
+
+            <div class="comparison-table-wrapper">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th class="highlight-col">Spotify Lyrics Overlay</th>
+                            <th>Traditional Electron Apps</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Executable Package Size</strong></td>
+                            <td class="highlight-col"><span class="pill green">1.9 MB</span></td>
+                            <td><span class="pill red">90 MB - 350 MB</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Memory Overhead (RAM)</strong></td>
+                            <td class="highlight-col"><span class="pill green">~15 MB</span></td>
+                            <td><span class="pill red">300 MB - 600 MB</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>CPU Usage</strong></td>
+                            <td class="highlight-col"><span class="pill green">&lt; 0.5%</span></td>
+                            <td><span class="pill red">5% - 15%</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Scraper Fallback Pipeline</strong></td>
+                            <td class="highlight-col">Parallel 4-Level Race</td>
+                            <td>Single Source / Fragile</td>
+                        </tr>
+                        <tr>
+                            <td><strong>OBS Studio Streamer Mode</strong></td>
+                            <td class="highlight-col">Built-in WebSocket Server</td>
+                            <td>Window Capture Only</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Per-Song Sync Memory</strong></td>
+                            <td class="highlight-col">Auto-Saved to Config</td>
+                            <td>Global Offset Only</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Engineered for <span class="gradient-text">Pure Performance</span></h2>
+                <p class="section-subtitle">Loaded with modern features for gamers, music lovers, and streamers.</p>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎤</div>
+                    <h3>Apple Music-Style Karaoke</h3>
+                    <p>Word-by-word timestamp sync highlights each word dynamically in Spotify green with soft glowing neon accents in real time.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>4-Level Scraper Fallback</h3>
+                    <p>Parallel racing search engine queries Lrclib, NetEase, Musixmatch (opt-in), and Lyrics.ovh concurrently for 99%+ lyrics coverage.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎥</div>
+                    <h3>OBS Streamer Mode</h3>
+                    <p>Exposes a local WebSocket server at <code>http://127.0.0.1:5001/overlay</code>. Streamers get a 100% transparent browser source for gameplay.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Auto-Translation & Transliteration</h3>
+                    <p>Instant Google Translate integration for non-English songs + Devanagari Hindi transliteration (Roman script) stacked automatically.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🖥️</div>
+                    <h3>Multi-Monitor Memory</h3>
+                    <p>Remembers exact coordinates across multiple displays with bounds validation safety. Automatically falls back if a monitor is unplugged.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Hardened PKCE Security</h3>
+                    <p>Zero secret keys stored in code. Authenticates via Spotify PKCE OAuth 2.0 flow using native C# secure helpers.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- OBS Mode Section -->
+    <section id="obs" class="obs-section">
+        <div class="container obs-container">
+            <div class="obs-content">
+                <div class="tag">STREAMER READY</div>
+                <h2>Dedicated <span class="gradient-text">OBS Browser Overlay</span></h2>
+                <p>No window capture clutter, no borders, no mouse cursor artifacts. Enable Streamer Mode in Settings and paste <code>http://127.0.0.1:5001/overlay</code> directly into OBS Studio, Streamlabs, or StreamElements.</p>
+                <ul class="obs-list">
+                    <li>✨ 100% Transparent Background</li>
+                    <li>🎨 High-contrast 2px black text stroke for readability over games</li>
+                    <li>⚡ Real-time WebSocket push (zero polling lag)</li>
+                    <li>🎵 Displays 3-line synced lyrics + mini album thumbnail</li>
+                </ul>
+            </div>
+            <div class="obs-preview-card">
+                <div class="obs-card-inner">
+                    <div class="obs-tag">OBS BROWSER SOURCE LIVE</div>
+                    <div class="obs-header">
+                        <span class="obs-title">The Weeknd - Blinding Lights</span>
+                    </div>
+                    <div class="obs-lyrics">
+                        <div class="obs-line prev">I've been on my own for long enough</div>
+                        <div class="obs-line current">I said, ooh, I'm blinded by the lights</div>
+                        <div class="obs-line next">No, I can't sleep until I feel your touch</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="faq-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Frequently Asked <span class="gradient-text">Questions</span></h2>
+                <p class="section-subtitle">Everything you need to know about setup, privacy, and performance.</p>
+            </div>
+
+            <div class="faq-accordion">
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>How is Spotify Lyrics Overlay so lightweight (&lt;2MB)?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Instead of bundling a full 300MB copy of Chromium and Node.js (like Electron apps do), Spotify Lyrics Overlay is built using <strong>Neutralinojs</strong>, which taps directly into Windows' native WebView2 engine and lightweight compiled C# Win32 helpers.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>Does this require Spotify Premium?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>No! The app connects via the official Spotify Web API using PKCE OAuth and works seamlessly with both Free and Premium Spotify accounts.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>How do I set up Spotify Client ID?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>On first run, click "Get Client ID" in the overlay setup screen. Create a free app in the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a>, add <code>http://127.0.0.1:8888/callback</code> to Redirect URIs, and save your Client ID in the app's <code>.env</code> file.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>Is my Spotify account secure?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Yes, 100%. The app uses standard Spotify OAuth 2.0 PKCE. Tokens are stored securely in Windows Credential Manager (`secure_store.exe`) using Windows DPAPI encryption. No secret keys or credentials are ever sent to external servers.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>What happens if lyrics aren't found for a song?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Our 4-level scraper fallback pipeline automatically races Lrclib, NetEase, Musixmatch, and Lyrics.ovh. If all fail, a non-intrusive manual search panel slides in allowing you to search manually or paste a local <code>.lrc</code> file!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container footer-container">
+            <div class="footer-left">
+                <div class="brand-name">Spotify Lyrics Overlay</div>
+                <p>Created by Bidipta Nandan. Open source under MIT License.</p>
+                <p class="disclaimer">Not affiliated with Spotify AB. Lyrics are sourced from public third-party services.</p>
+            </div>
+            <div class="footer-right">
+                <a href="https://github.com/bnbidipta/spotify-lyrics-overlay" target="_blank" rel="noopener">GitHub Repository</a>
+                <a href="https://github.com/bnbidipta/spotify-lyrics-overlay/releases" target="_blank" rel="noopener">Releases & Changelog</a>
+                <a href="https://github.com/bnbidipta/spotify-lyrics-overlay/issues" target="_blank" rel="noopener">Report Issue</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

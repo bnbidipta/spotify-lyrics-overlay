@@ -38,9 +38,10 @@ jobs:
       - name: Compile C# Helpers
         run: |
           C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:neutralino-app\auth_listener.exe neutralino-app\auth_listener.cs
-          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:neutralino-app\window_utils.exe neutralino-app\window_utils.cs
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /r:System.Windows.Forms.dll /r:System.Drawing.dll /out:neutralino-app\window_utils.exe neutralino-app\window_utils.cs
           C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /r:System.Security.dll /out:neutralino-app\secure_store.exe neutralino-app\secure_store.cs
           C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /r:System.Web.Extensions.dll /out:neutralino-app\fetch_lyrics.exe neutralino-app\fetch_lyrics.cs
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:neutralino-app\obs_server.exe neutralino-app\obs_server.cs
 
       - name: Create Release Structure
         run: |
@@ -51,6 +52,7 @@ jobs:
           copy neutralino-app\fetch_lyrics.exe dist_release\fetch_lyrics.exe
           copy neutralino-app\secure_store.exe dist_release\secure_store.exe
           copy neutralino-app\window_utils.exe dist_release\window_utils.exe
+          copy neutralino-app\obs_server.exe dist_release\obs_server.exe
 
       - name: Sign Executables (Optional Code Signing)
         env:
@@ -67,6 +69,7 @@ jobs:
           & $signtool sign /f cert.pfx /p "${{ env.SIGNING_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\fetch_lyrics.exe
           & $signtool sign /f cert.pfx /p "${{ env.SIGNING_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\secure_store.exe
           & $signtool sign /f cert.pfx /p "${{ env.SIGNING_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\window_utils.exe
+          & $signtool sign /f cert.pfx /p "${{ env.SIGNING_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist_release\obs_server.exe
           Remove-Item cert.pfx -Force
 
       - name: Compress Release Archive

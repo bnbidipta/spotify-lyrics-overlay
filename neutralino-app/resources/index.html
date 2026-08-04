@@ -102,6 +102,22 @@
                 </label>
             </div>
             
+            <div class="streamer-mode-group">
+                <label class="checkbox-label" title="Enable local WebSocket server for OBS Studio Browser Source">
+                    <input type="checkbox" id="streamer-mode-optin"> Streamer Mode (OBS Overlay)
+                </label>
+                <div id="streamer-mode-info" style="display: none;">
+                    <span id="obs-url-text">http://127.0.0.1:5001/overlay</span>
+                    <button id="copy-obs-url-btn" class="obs-copy-btn">Copy OBS Link</button>
+                </div>
+            </div>
+            
+            <div class="autostart-group">
+                <label class="checkbox-label" title="Automatically launch Spotify Lyrics Overlay when Windows starts">
+                    <input type="checkbox" id="autostart-checkbox"> Start with Windows
+                </label>
+            </div>
+            
             <div class="settings-disclaimer">
                 Not affiliated with Spotify. Lyrics are sourced from third-party services.
             </div>
@@ -123,6 +139,21 @@
         <div id="lyrics-section">
             <div id="song-info">Connecting to Spotify...</div>
             <div id="lyrics-text">Searching for lyrics...</div>
+            
+            <!-- Manual Search Fallback -->
+            <div id="manual-search-panel" style="display: none;">
+                <p class="manual-search-hint">Not found? Search manually</p>
+                <div class="manual-search-row">
+                    <input type="text" id="manual-search-input" placeholder="Artist - Title" spellcheck="false" autocomplete="off" />
+                    <button id="manual-search-btn" title="Search">🔍</button>
+                </div>
+                <button id="paste-lrc-btn" class="paste-lrc-button">📋 Paste LRC File</button>
+                <textarea id="lrc-paste-area" style="display: none;" placeholder="Paste your .lrc file contents here..."></textarea>
+                <div id="lrc-paste-actions" style="display: none;">
+                    <button id="lrc-apply-btn" class="lrc-action-btn apply">Apply</button>
+                    <button id="lrc-cancel-btn" class="lrc-action-btn cancel">Cancel</button>
+                </div>
+            </div>
         </div>
         
         <!-- Resize handle -->

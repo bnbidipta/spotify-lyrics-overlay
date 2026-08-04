@@ -57,6 +57,18 @@ let isTranslationActive = false;
 let currentLikedTrackId = null;
 let isCurrentTrackLiked = false;
 
+// Manual search fallback
+let lastSearchTrackName = '';
+let lastSearchArtistName = '';
+const manualSearchPanel = document.getElementById('manual-search-panel');
+const manualSearchInput = document.getElementById('manual-search-input');
+const manualSearchBtn = document.getElementById('manual-search-btn');
+const pasteLrcBtn = document.getElementById('paste-lrc-btn');
+const lrcPasteArea = document.getElementById('lrc-paste-area');
+const lrcPasteActions = document.getElementById('lrc-paste-actions');
+const lrcApplyBtn = document.getElementById('lrc-apply-btn');
+const lrcCancelBtn = document.getElementById('lrc-cancel-btn');
+
 Neutralino.init();
 Neutralino.window.setDraggableRegion('drag-handle');
 
@@ -69,6 +81,7 @@ if (pinBtn) pinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (lockBtn) lockBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (settingsBtn) settingsBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (settingsPanel) settingsPanel.addEventListener('mousedown', (e) => e.stopPropagation());
+if (manualSearchPanel) manualSearchPanel.addEventListener('mousedown', (e) => e.stopPropagation());
 
 let currentConfig = {
     window_width: 600,
@@ -84,8 +97,78 @@ let currentConfig = {
     sync_offset: 0,
     theme: "dark",
     provider_order: ["lrclib", "netease", "lyricsovh"],
-    song_offsets: {}
+    song_offsets: {},
+    streamer_mode: false,
+    autostart: false
 };
+
+let currentTrackName = '';
+let currentArtistName = '';
+let currentAlbumArtUrl = '';
+let obsServerRunning = false;
+let lastObsBroadcastMs = 0;
+
+async function startObsServer() {
+    if (obsServerRunning) return;
+    try {
+        const command = `"${window.NL_PATH}/obs_server.exe" -Port 5001`;
+        Neutralino.os.execCommand(command, { background: true });
+        obsServerRunning = true;
+    } catch (e) {
+        console.error("Failed to start OBS server", e);
+    }
+}
+
+async function stopObsServer() {
+    try {
+        await Neutralino.os.execCommand('taskkill /IM obs_server.exe /F >nul 2>&1');
+        obsServerRunning = false;
+    } catch (e) {}
+}
+
+async function updateObsServerState() {
+    if (!currentConfig.streamer_mode) return;
+    
+    const now = Date.now();
+    if (now - lastObsBroadcastMs < 200) return;
+    lastObsBroadcastMs = now;
+
+    let prevText = '';
+    let currentText = '';
+    let nextText = '';
+
+    if (parsedLyrics && parsedLyrics.length > 0) {
+        if (lastActiveIndex >= 0 && lastActiveIndex < parsedLyrics.length) {
+            currentText = parsedLyrics[lastActiveIndex].text || '';
+            if (lastActiveIndex > 0) prevText = parsedLyrics[lastActiveIndex - 1].text || '';
+            if (lastActiveIndex + 1 < parsedLyrics.length) nextText = parsedLyrics[lastActiveIndex + 1].text || '';
+        } else if (parsedLyrics.length === 1) {
+            currentText = parsedLyrics[0].text || '';
+        }
+    }
+
+    const currentProgress = progressMsLastPoll + getEffectiveSyncOffset() + (isPlaying ? (Date.now() - timestampLastPoll) : 0);
+
+    const payload = {
+        trackName: currentTrackName || '',
+        artistName: currentArtistName || '',
+        albumArt: currentAlbumArtUrl || '',
+        progressMs: Math.max(0, Math.round(currentProgress)),
+        durationMs: trackDurationMs || 0,
+        isPlaying: isPlaying,
+        prevLine: prevText,
+        currentLine: currentText,
+        nextLine: nextText
+    };
+
+    try {
+        await fetch('http://127.0.0.1:5001/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {}
+}
 
 async function loadConfig() {
     try {
@@ -119,11 +202,57 @@ async function saveConfig() {
     }
 }
 
+let windowBoundsSaveTimer = null;
+function queueWindowBoundsSave() {
+    if (windowBoundsSaveTimer) clearTimeout(windowBoundsSaveTimer);
+    windowBoundsSaveTimer = setTimeout(async () => {
+        if (window.NL_MODE === 'window') {
+            try {
+                const size = await Neutralino.window.getSize();
+                const pos = await Neutralino.window.getPosition();
+                currentConfig.window_width = size.width;
+                currentConfig.window_height = size.height;
+                currentConfig.window_x = pos.x;
+                currentConfig.window_y = pos.y;
+                await Neutralino.filesystem.writeFile('config.json', JSON.stringify(currentConfig, null, 2));
+            } catch (e) {}
+        }
+    }, 500);
+}
+
+function setupWindowBoundsListeners() {
+    if (window.NL_MODE === 'window') {
+        try {
+            Neutralino.events.on('windowMove', () => queueWindowBoundsSave());
+            Neutralino.events.on('windowResize', () => queueWindowBoundsSave());
+        } catch (e) {}
+    }
+}
+
 async function restoreWindowGeometry() {
     try {
         if (window.NL_MODE === 'window') {
-            await Neutralino.window.setSize({ width: currentConfig.window_width, height: currentConfig.window_height });
-            await Neutralino.window.move(currentConfig.window_x, currentConfig.window_y);
+            const x = currentConfig.window_x !== undefined ? currentConfig.window_x : 100;
+            const y = currentConfig.window_y !== undefined ? currentConfig.window_y : 100;
+            const w = currentConfig.window_width || 600;
+            const h = currentConfig.window_height || 400;
+
+            let isValid = true;
+            try {
+                const cmd = `"${window.NL_PATH}/window_utils.exe" -Action validate-bounds -X ${x} -Y ${y} -Width ${w} -Height ${h}`;
+                const res = await Neutralino.os.execCommand(cmd);
+                if (res && res.stdOut) {
+                    const data = JSON.parse(res.stdOut.trim());
+                    if (data && data.valid === false) isValid = false;
+                }
+            } catch (e) {}
+
+            await Neutralino.window.setSize({ width: w, height: h });
+            if (isValid) {
+                await Neutralino.window.move(x, y);
+            } else {
+                await Neutralino.window.center();
+            }
         }
     } catch (e) {
         console.error('Failed to restore window geometry', e);
@@ -428,6 +557,18 @@ function applySettings() {
         musixmatchOptinEl.checked = currentConfig.provider_order.includes('musixmatch');
     }
 
+    const streamerModeOptinEl = document.getElementById('streamer-mode-optin');
+    const streamerModeInfoEl = document.getElementById('streamer-mode-info');
+    if (streamerModeOptinEl) {
+        streamerModeOptinEl.checked = !!currentConfig.streamer_mode;
+        if (streamerModeInfoEl) {
+            streamerModeInfoEl.style.display = currentConfig.streamer_mode ? 'flex' : 'none';
+        }
+        if (currentConfig.streamer_mode) {
+            startObsServer();
+        }
+    }
+
     renderProviderList();
 }
 async function checkForUpdates() {
@@ -553,6 +694,68 @@ if (musixmatchOptin) {
             currentConfig.provider_order = currentConfig.provider_order.filter(p => p !== 'musixmatch');
         }
         renderProviderList();
+        await saveConfig();
+    });
+}
+
+const streamerModeOptin = document.getElementById('streamer-mode-optin');
+const streamerModeInfo = document.getElementById('streamer-mode-info');
+const copyObsUrlBtn = document.getElementById('copy-obs-url-btn');
+
+if (streamerModeOptin) {
+    streamerModeOptin.addEventListener('mousedown', (e) => e.stopPropagation());
+    streamerModeOptin.addEventListener('change', async (e) => {
+        currentConfig.streamer_mode = e.target.checked;
+        if (streamerModeInfo) {
+            streamerModeInfo.style.display = e.target.checked ? 'flex' : 'none';
+        }
+        if (e.target.checked) {
+            await startObsServer();
+        } else {
+            await stopObsServer();
+        }
+        await saveConfig();
+    });
+}
+
+if (copyObsUrlBtn) {
+    copyObsUrlBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    copyObsUrlBtn.addEventListener('click', async () => {
+        try {
+            await Neutralino.clipboard.writeText('http://127.0.0.1:5001/overlay');
+            copyObsUrlBtn.innerText = 'Copied!';
+            setTimeout(() => { copyObsUrlBtn.innerText = 'Copy OBS Link'; }, 1500);
+        } catch (e) {}
+    });
+}
+
+async function checkAutostartRegistry() {
+    const autostartCheckbox = document.getElementById('autostart-checkbox');
+    if (!autostartCheckbox) return;
+    try {
+        const cmd = `"${window.NL_PATH}/window_utils.exe" -Action check-autostart`;
+        const res = await Neutralino.os.execCommand(cmd);
+        if (res && res.stdOut) {
+            const data = JSON.parse(res.stdOut.trim());
+            if (data && data.autostart !== undefined) {
+                autostartCheckbox.checked = data.autostart;
+                currentConfig.autostart = data.autostart;
+            }
+        }
+    } catch (e) {}
+}
+
+const autostartCheckbox = document.getElementById('autostart-checkbox');
+if (autostartCheckbox) {
+    autostartCheckbox.addEventListener('mousedown', (e) => e.stopPropagation());
+    autostartCheckbox.addEventListener('change', async (e) => {
+        const enable = e.target.checked;
+        currentConfig.autostart = enable;
+        try {
+            const action = enable ? 'enable-autostart' : 'disable-autostart';
+            const cmd = `"${window.NL_PATH}/window_utils.exe" -Action ${action}`;
+            await Neutralino.os.execCommand(cmd);
+        } catch (e) {}
         await saveConfig();
     });
 }
@@ -1049,6 +1252,9 @@ function startPlaybackMonitoring() {
 
             const track = data.item;
             trackDurationMs = track.duration_ms;
+            currentTrackName = track.name;
+            currentArtistName = track.artists ? track.artists.map(a=>a.name).join(', ') : '';
+            currentAlbumArtUrl = (track.album && track.album.images && track.album.images.length > 0) ? track.album.images[0].url : '';
             
             const headerArt = document.getElementById('header-album-art');
             const headerTitle = document.getElementById('header-title');
@@ -1084,9 +1290,12 @@ function startPlaybackMonitoring() {
                     }
                     renderLyrics(parsedLyrics);
                     updateUI(songInfo, null);
+                    hideManualSearchPanel();
                     checkTrackLikedStatus(trackId);
                     return;
                 }
+                lastSearchTrackName = track.name;
+                lastSearchArtistName = track.artists[0].name;
                 const result = await fetchLyrics(track.name, track.artists[0].name);
                 parsedLyrics = result.lines;
                 if (isTranslationActive) {
@@ -1095,7 +1304,10 @@ function startPlaybackMonitoring() {
                 renderLyrics(parsedLyrics);
                 updateUI(songInfo, null);
                 const isError = result.lines.length===0 || (result.lines.length===1 && result.lines[0].text==="Lyrics not found for this track.");
-                if (!isError) {
+                if (isError) {
+                    showManualSearchPanel(track.artists[0].name, track.name);
+                } else {
+                    hideManualSearchPanel();
                     try { await cacheLyrics(track.name, track.artists[0].name, result); } catch {}
                 }
                 checkTrackLikedStatus(trackId);
@@ -1207,6 +1419,10 @@ function startLyricsSyncLoop() {
                 const pct = Math.min(100, (currentProgress / trackDurationMs) * 100);
                 progressBar.style.width = `${pct}%`;
             }
+
+            if (currentConfig.streamer_mode) {
+                updateObsServerState();
+            }
         }
         animationFrameId = requestAnimationFrame(update);
     }
@@ -1277,6 +1493,8 @@ async function onStart() {
     await loadLyricsCache();
     await restoreWindowGeometry();
     applySettings();
+    await checkAutostartRegistry();
+    setupWindowBoundsListeners();
     checkForUpdates();
     await loadEnv();
     if (!spotifyClientId) {
@@ -1318,5 +1536,127 @@ function setupContextMenu() {
     });
 }
 setupContextMenu();
+setupManualSearch();
 loginBtn.onclick = performLogin;
 onStart();
+
+// ─── Manual Search Fallback ───
+function showManualSearchPanel(artistName, trackName) {
+    if (!manualSearchPanel) return;
+    manualSearchInput.value = `${artistName} - ${trackName}`;
+    manualSearchPanel.style.display = 'block';
+    // Reset LRC paste state
+    lrcPasteArea.style.display = 'none';
+    lrcPasteActions.style.display = 'none';
+    lrcPasteArea.value = '';
+}
+
+function hideManualSearchPanel() {
+    if (!manualSearchPanel) return;
+    manualSearchPanel.style.display = 'none';
+    lrcPasteArea.style.display = 'none';
+    lrcPasteActions.style.display = 'none';
+    lrcPasteArea.value = '';
+}
+
+async function performManualSearch() {
+    const query = manualSearchInput.value.trim();
+    if (!query) return;
+
+    // Parse "Artist - Title" or just use as title
+    let artist, title;
+    const dashIndex = query.indexOf(' - ');
+    if (dashIndex > 0) {
+        artist = query.substring(0, dashIndex).trim();
+        title = query.substring(dashIndex + 3).trim();
+    } else {
+        artist = lastSearchArtistName || '';
+        title = query;
+    }
+
+    if (!title) return;
+
+    // Show searching state
+    displayPlaceholderLyric('Searching...');
+    hideManualSearchPanel();
+
+    const result = await fetchLyrics(title, artist);
+    parsedLyrics = result.lines;
+    if (isTranslationActive) {
+        await translateLyrics(parsedLyrics);
+    }
+    renderLyrics(parsedLyrics);
+
+    const isError = result.lines.length===0 || (result.lines.length===1 && result.lines[0].text==="Lyrics not found for this track.");
+    if (isError) {
+        showManualSearchPanel(artist, title);
+    } else {
+        // Cache under both original and manual search keys
+        try { await cacheLyrics(title, artist, result); } catch {}
+        if (lastSearchTrackName && lastSearchArtistName) {
+            try { await cacheLyrics(lastSearchTrackName, lastSearchArtistName, result); } catch {}
+        }
+    }
+}
+
+function applyPastedLrc(lrcContent) {
+    if (!lrcContent || !lrcContent.trim()) return;
+
+    const isSynced = /^\[\d+:\d+/.test(lrcContent.trim());
+    if (isSynced) {
+        parsedLyrics = parseSyncedLyrics(lrcContent);
+    } else {
+        parsedLyrics = parsePlainLyrics(lrcContent);
+    }
+
+    if (parsedLyrics.length === 0) {
+        parsedLyrics = [{ time: -1, text: 'Could not parse pasted content.' }];
+    }
+
+    if (isTranslationActive) {
+        translateLyrics(parsedLyrics);
+    }
+    renderLyrics(parsedLyrics);
+    hideManualSearchPanel();
+
+    // Cache the pasted lyrics for this track
+    if (lastSearchTrackName && lastSearchArtistName) {
+        const result = { synced: isSynced, lines: parsedLyrics };
+        try { cacheLyrics(lastSearchTrackName, lastSearchArtistName, result); } catch {}
+    }
+}
+
+function setupManualSearch() {
+    if (!manualSearchBtn) return;
+
+    // Search button click
+    manualSearchBtn.addEventListener('click', performManualSearch);
+
+    // Enter key in search input
+    manualSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            performManualSearch();
+        }
+    });
+
+    // Paste LRC toggle
+    pasteLrcBtn.addEventListener('click', () => {
+        const isVisible = lrcPasteArea.style.display !== 'none';
+        lrcPasteArea.style.display = isVisible ? 'none' : 'block';
+        lrcPasteActions.style.display = isVisible ? 'none' : 'flex';
+        if (!isVisible) lrcPasteArea.focus();
+    });
+
+    // Apply pasted LRC
+    lrcApplyBtn.addEventListener('click', () => {
+        applyPastedLrc(lrcPasteArea.value);
+    });
+
+    // Cancel paste
+    lrcCancelBtn.addEventListener('click', () => {
+        lrcPasteArea.style.display = 'none';
+        lrcPasteActions.style.display = 'none';
+        lrcPasteArea.value = '';
+    });
+}
