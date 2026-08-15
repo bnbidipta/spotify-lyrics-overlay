@@ -1206,6 +1206,116 @@ function hideAuthRequired() {
 }
 
 // --- PKCE Token Exchange via fetch (NO PowerShell, NO secret) ---
+let currentSession = {
+    accessToken: null,
+    refreshToken: null,
+    expiresAt: 0
+};
+let proactiveRefreshTimer = null;
+let refreshPromise = null;
+
+async function saveSession(session) {
+    currentSession = {
+        accessToken: session.accessToken || null,
+        refreshToken: session.refreshToken || null,
+        expiresAt: session.expiresAt || 0
+    };
+    accessToken = currentSession.accessToken;
+
+    // 1. Save to localStorage as fallback
+    try {
+        if (currentSession.accessToken) localStorage.setItem('spotify_access_token', currentSession.accessToken);
+        if (currentSession.refreshToken) localStorage.setItem('spotify_refresh_token', currentSession.refreshToken);
+        if (currentSession.expiresAt) localStorage.setItem('spotify_token_expires_at', currentSession.expiresAt.toString());
+    } catch(e) {}
+
+    // 2. Save encrypted via DPAPI secure_store.exe (survives origin/port changes & restarts)
+    try {
+        const payload = btoa(unescape(encodeURIComponent(JSON.stringify(currentSession))));
+        const cmd = `"${window.NL_PATH}/secure_store.exe" save-b64 spotify_session ${payload}`;
+        await Neutralino.os.execCommand(cmd);
+    } catch(e) {
+        console.warn('Failed to save to secure_store', e);
+    }
+}
+
+async function loadSession() {
+    // 1. Try loading from DPAPI secure_store.exe
+    try {
+        const cmd = `"${window.NL_PATH}/secure_store.exe" load spotify_session`;
+        const res = await Neutralino.os.execCommand(cmd);
+        if (res && res.stdOut && res.stdOut.trim()) {
+            const rawJson = decodeURIComponent(escape(atob(res.stdOut.trim())));
+            const data = JSON.parse(rawJson);
+            if (data && (data.accessToken || data.refreshToken)) {
+                currentSession = data;
+                accessToken = data.accessToken;
+                return currentSession;
+            }
+        }
+    } catch(e) {
+        console.warn('Failed to load from secure_store', e);
+    }
+
+    // 2. Fallback to localStorage
+    try {
+        const savedToken = localStorage.getItem('spotify_access_token');
+        const refreshToken = localStorage.getItem('spotify_refresh_token');
+        const expiresAt = parseInt(localStorage.getItem('spotify_token_expires_at') || '0', 10);
+        if (savedToken || refreshToken) {
+            currentSession = {
+                accessToken: savedToken,
+                refreshToken: refreshToken,
+                expiresAt: expiresAt
+            };
+            accessToken = savedToken;
+            return currentSession;
+        }
+    } catch(e) {}
+
+    return currentSession;
+}
+
+async function clearSession() {
+    currentSession = {
+        accessToken: null,
+        refreshToken: null,
+        expiresAt: 0
+    };
+    accessToken = null;
+    if (proactiveRefreshTimer) clearTimeout(proactiveRefreshTimer);
+
+    try {
+        localStorage.removeItem('spotify_access_token');
+        localStorage.removeItem('spotify_refresh_token');
+        localStorage.removeItem('spotify_token_expires_at');
+    } catch(e) {}
+
+    try {
+        const cmd = `"${window.NL_PATH}/secure_store.exe" clear spotify_session`;
+        await Neutralino.os.execCommand(cmd);
+    } catch(e) {}
+}
+
+function scheduleProactiveRefresh(expiresAt) {
+    if (proactiveRefreshTimer) clearTimeout(proactiveRefreshTimer);
+    if (!expiresAt) return;
+    
+    // Refresh 5 minutes (300,000ms) before token expiration, or after at least 10 seconds
+    const timeUntilRefresh = Math.max(10000, expiresAt - Date.now() - 300000);
+    
+    proactiveRefreshTimer = setTimeout(async () => {
+        try {
+            await refreshSpotifyToken();
+        } catch (err) {
+            console.warn('Proactive token refresh failed, will retry in 30s:', err);
+            if (currentSession.refreshToken) {
+                proactiveRefreshTimer = setTimeout(() => refreshSpotifyToken().catch(()=>{}), 30000);
+            }
+        }
+    }, timeUntilRefresh);
+}
+
 async function exchangeCodeViaFetch(code, verifier, port) {
     const body = new URLSearchParams({
         grant_type: 'authorization_code',
@@ -1222,26 +1332,62 @@ async function exchangeCodeViaFetch(code, verifier, port) {
     if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`);
     return await res.json();
 }
+
 async function refreshSpotifyToken() {
-    const refreshToken = localStorage.getItem('spotify_refresh_token');
-    if (!refreshToken) throw new Error('No refresh token');
-    const body = new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: spotifyClientId
-    });
-    const res = await fetch('https://accounts.spotify.com/api/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body
-    });
-    if (!res.ok) throw new Error(`Refresh failed: ${res.status}`);
-    const data = await res.json();
-    accessToken = data.access_token;
-    localStorage.setItem('spotify_access_token', accessToken);
-    if (data.refresh_token) localStorage.setItem('spotify_refresh_token', data.refresh_token);
-    localStorage.setItem('spotify_token_expires_at', (Date.now() + (data.expires_in||3600)*1000).toString());
-    return accessToken;
+    // If a refresh is already in flight, reuse that promise
+    if (refreshPromise) return refreshPromise;
+
+    refreshPromise = (async () => {
+        try {
+            const session = await loadSession();
+            const refreshToken = session ? session.refreshToken : null;
+            if (!refreshToken) throw new Error('No refresh token available');
+
+            const body = new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: refreshToken,
+                client_id: spotifyClientId
+            });
+
+            const res = await fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body
+            });
+
+            if (!res.ok) {
+                let errorData = null;
+                try { errorData = await res.json(); } catch(e) {}
+                
+                // If Spotify explicitly returns 400 with invalid_grant, the token is revoked
+                if (res.status === 400 && errorData && errorData.error === 'invalid_grant') {
+                    console.error('Refresh token revoked:', errorData);
+                    await clearSession();
+                    throw new Error('Refresh token revoked: ' + (errorData.error_description || 'invalid_grant'));
+                }
+                
+                throw new Error(`Token refresh HTTP error: ${res.status}`);
+            }
+
+            const data = await res.json();
+            const newAccessToken = data.access_token;
+            const newRefreshToken = data.refresh_token || refreshToken;
+            const expiresAt = Date.now() + ((data.expires_in || 3600) * 1000);
+
+            await saveSession({
+                accessToken: newAccessToken,
+                refreshToken: newRefreshToken,
+                expiresAt: expiresAt
+            });
+
+            scheduleProactiveRefresh(expiresAt);
+            return newAccessToken;
+        } finally {
+            refreshPromise = null;
+        }
+    })();
+
+    return refreshPromise;
 }
 
 async function performLogin() {
@@ -1257,7 +1403,7 @@ async function performLogin() {
         sessionStorage.setItem('oauth_state', state);
         sessionStorage.setItem('oauth_port', port.toString());
 
-        const authUrl = `https://accounts.spotify.com/authorize?client_id=${encodeURIComponent(spotifyClientId)}&redirect_uri=${encodeURIComponent(`http://127.0.0.1:${port}/callback`)}&response_type=code&scope=user-read-currently-playing&code_challenge=${challenge}&code_challenge_method=S256&state=${state}&show_dialog=true`;
+        const authUrl = `https://accounts.spotify.com/authorize?client_id=${encodeURIComponent(spotifyClientId)}&redirect_uri=${encodeURIComponent(`http://127.0.0.1:${port}/callback`)}&response_type=code&scope=user-read-currently-playing%20user-modify-playback-state%20user-library-read%20user-library-modify&code_challenge=${challenge}&code_challenge_method=S256&state=${state}&show_dialog=true`;
         await Neutralino.os.open(authUrl);
 
         // Secure: port and state are validated ints/UUIDs, no user input
@@ -1270,10 +1416,13 @@ async function performLogin() {
         if (!parsed.code || !parsed.state || parsed.state !== state) throw new Error('State mismatch or missing code');
 
         const tokenData = await exchangeCodeViaFetch(parsed.code, verifier, port);
-        accessToken = tokenData.access_token;
-        localStorage.setItem('spotify_access_token', tokenData.access_token);
-        localStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
-        localStorage.setItem('spotify_token_expires_at', (Date.now() + (tokenData.expires_in||3600)*1000).toString());
+        const expiresAt = Date.now() + ((tokenData.expires_in || 3600) * 1000);
+        await saveSession({
+            accessToken: tokenData.access_token,
+            refreshToken: tokenData.refresh_token,
+            expiresAt: expiresAt
+        });
+        scheduleProactiveRefresh(expiresAt);
 
         hideAuthRequired();
         updateUI('Connecting...', 'Authenticated. Resolving playback...');
@@ -1287,8 +1436,6 @@ async function performLogin() {
         loginBtn.innerText = 'Login to Spotify';
     }
 }
-
-// TODO: encrypt with DPAPI before localStorage: ConvertFrom-SecureString
 
 let lyricsCache = {};
 
@@ -1352,6 +1499,12 @@ function startPlaybackMonitoring() {
     startLyricsSyncLoop();
     playbackPollInterval = setInterval(async () => {
         if (!accessToken) return;
+
+        // Proactive token refresh if within 60s of expiration
+        if (currentSession && currentSession.expiresAt && Date.now() > currentSession.expiresAt - 60000) {
+            try { await refreshSpotifyToken(); } catch(e) {}
+        }
+
         try {
             const response = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
                 headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -1361,14 +1514,21 @@ function startPlaybackMonitoring() {
                 isPlaying = false; parsedLyrics = []; return;
             }
             if (response.status === 401) {
-                try { await refreshSpotifyToken(); return; } catch {
-                    accessToken = null;
-                    localStorage.removeItem('spotify_access_token');
-                    localStorage.removeItem('spotify_refresh_token');
-                    localStorage.removeItem('spotify_token_expires_at');
-                    clearInterval(playbackPollInterval);
-                    if (animationFrameId) cancelAnimationFrame(animationFrameId);
-                    showAuthRequired(); return;
+                try {
+                    await refreshSpotifyToken();
+                    return;
+                } catch (refreshErr) {
+                    console.error('Refresh on 401 failed', refreshErr);
+                    if (refreshErr.message && (refreshErr.message.includes('revoked') || !currentSession.refreshToken)) {
+                        accessToken = null;
+                        await clearSession();
+                        clearInterval(playbackPollInterval);
+                        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                        showAuthRequired();
+                        return;
+                    }
+                    // Transient network glitch: retry on next poll interval without logging out!
+                    return;
                 }
             }
             if (response.status === 429) return;
@@ -1640,16 +1800,34 @@ async function onStart() {
         lyricsSection.style.display = 'none';
         return;
     }
-    const savedToken = localStorage.getItem('spotify_access_token');
-    const refreshToken = localStorage.getItem('spotify_refresh_token');
-    const expiresAt = parseInt(localStorage.getItem('spotify_token_expires_at')||'0');
-    if (savedToken && refreshToken) {
-        if (Date.now() > expiresAt - 300000) {
-            try { hideAuthRequired(); updateUI('Connecting...','Refreshing session...'); await refreshSpotifyToken(); }
-            catch { showAuthRequired(); return; }
-        } else accessToken = savedToken;
-        hideAuthRequired(); updateUI('Connecting...','Restoring session...'); startPlaybackMonitoring();
-    } else showAuthRequired();
+    const session = await loadSession();
+    if (session && session.refreshToken) {
+        // If access token is missing or expires within 5 minutes, refresh it now
+        if (!session.accessToken || Date.now() > (session.expiresAt - 300000)) {
+            try {
+                hideAuthRequired();
+                updateUI('Connecting...', 'Refreshing session...');
+                await refreshSpotifyToken();
+                startPlaybackMonitoring();
+            } catch (err) {
+                console.error('Failed to refresh on start:', err);
+                if (err.message && (err.message.includes('revoked') || !session.refreshToken)) {
+                    showAuthRequired();
+                    return;
+                }
+                // If offline / transient error, attempt playback monitoring with existing token or wait
+                startPlaybackMonitoring();
+            }
+        } else {
+            accessToken = session.accessToken;
+            scheduleProactiveRefresh(session.expiresAt);
+            hideAuthRequired();
+            updateUI('Connecting...', 'Restoring session...');
+            startPlaybackMonitoring();
+        }
+    } else {
+        showAuthRequired();
+    }
 }
 function setupContextMenu() {
     const contextMenu=document.getElementById('context-menu');
