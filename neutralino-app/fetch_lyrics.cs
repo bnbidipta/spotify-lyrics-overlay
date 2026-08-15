@@ -12,9 +12,10 @@ class FetchLyrics {
     private static string commonUserAgent = "Spotify-Lyrics-Overlay/2.0 (Neutralinojs)";
 
     struct ScraperResult {
+        public bool Success;
         public bool Synced;
         public string Lyrics;
-        public bool Success;
+        public string Provider;
     }
 
     static void Main(string[] args) {
@@ -87,21 +88,23 @@ class FetchLyrics {
         }
 
         if (bestResult.Success && bestResult.Synced) {
-            OutputResult(true, bestResult.Lyrics);
+            OutputResult(true, bestResult.Lyrics, bestResult.Provider);
             return;
         }
 
         // PASS 2: Main Title Match
         string plainFallback = bestResult.Success && !bestResult.Synced ? bestResult.Lyrics : null;
+        string plainProvider = bestResult.Success && !bestResult.Synced ? bestResult.Provider : null;
 
         if (tier1.Count > 0) {
             var results = RaceScrapers(tier1, cleanTrack, cleanArtist, 2000);
             var cleanBest = SelectBest(results, tier1);
             if (cleanBest.Success && cleanBest.Synced) {
-                OutputResult(true, cleanBest.Lyrics);
+                OutputResult(true, cleanBest.Lyrics, cleanBest.Provider);
                 return;
             } else if (cleanBest.Success && plainFallback == null) {
                 plainFallback = cleanBest.Lyrics;
+                plainProvider = cleanBest.Provider;
             }
         }
 
@@ -109,17 +112,18 @@ class FetchLyrics {
             var results = RaceScrapers(tier2, cleanTrack, cleanArtist, 2000);
             var cleanBest2 = SelectBest(results, tier2);
             if (cleanBest2.Success && cleanBest2.Synced) {
-                OutputResult(true, cleanBest2.Lyrics);
+                OutputResult(true, cleanBest2.Lyrics, cleanBest2.Provider);
                 return;
             } else if (cleanBest2.Success && plainFallback == null) {
                 plainFallback = cleanBest2.Lyrics;
+                plainProvider = cleanBest2.Provider;
             }
         }
 
         if (plainFallback != null) {
-            OutputResult(false, plainFallback);
+            OutputResult(false, plainFallback, plainProvider);
         } else {
-            OutputResult(false, "Lyrics not found for this track.");
+            OutputResult(false, "Lyrics not found for this track.", "none");
         }
     }
 
@@ -145,12 +149,13 @@ class FetchLyrics {
         foreach (var provider in targetProviders) {
             string p = provider;
             Thread t = new Thread(() => {
-                ScraperResult res = new ScraperResult { Success = false };
+                ScraperResult res = new ScraperResult { Success = false, Provider = p };
                 try {
                     if (p == "lrclib") res = QueryLrclib(track, artist);
                     else if (p == "netease") res = QueryNetEase(track, artist);
                     else if (p == "musixmatch") res = QueryMusixmatch(track, artist);
                     else if (p == "lyricsovh") res = QueryLyricsOvh(track, artist);
+                    res.Provider = p;
                 } catch {}
                 lock (lockObj) {
                     results[p] = res;
@@ -335,11 +340,12 @@ class FetchLyrics {
         return new ScraperResult { Success = false };
     }
 
-    static void OutputResult(bool synced, string lyrics) {
+    static void OutputResult(bool synced, string lyrics, string provider = null) {
         var serializer = new JavaScriptSerializer();
         var result = new Dictionary<string, object> {
             { "synced", synced },
-            { "lyrics", lyrics }
+            { "lyrics", lyrics },
+            { "provider", provider ?? "unknown" }
         };
         Console.WriteLine(serializer.Serialize(result));
     }

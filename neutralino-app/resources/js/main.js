@@ -99,7 +99,15 @@ let currentConfig = {
     provider_order: ["lrclib", "netease", "lyricsovh"],
     song_offsets: {},
     streamer_mode: false,
-    autostart: false
+    autostart: false,
+    telemetry: {
+        opt_in: false,
+        cache_hits: 0,
+        cache_misses: 0,
+        total_searches: 0,
+        provider_wins: { lrclib: 0, netease: 0, musixmatch: 0, lyricsovh: 0 },
+        total_fetch_time_ms: 0
+    }
 };
 
 let currentTrackName = '';
@@ -569,6 +577,17 @@ function applySettings() {
         }
     }
 
+    const telemetryOptinEl = document.getElementById('telemetry-optin');
+    const telemetryCardEl = document.getElementById('telemetry-stats-card');
+    if (telemetryOptinEl) {
+        const isOptin = !!(currentConfig.telemetry && currentConfig.telemetry.opt_in);
+        telemetryOptinEl.checked = isOptin;
+        if (telemetryCardEl) {
+            telemetryCardEl.style.display = isOptin ? 'flex' : 'none';
+        }
+        if (isOptin) renderTelemetryStats();
+    }
+
     renderProviderList();
 }
 async function checkForUpdates() {
@@ -759,6 +778,119 @@ if (autostartCheckbox) {
         await saveConfig();
     });
 }
+
+function initTelemetryConfig() {
+    if (!currentConfig.telemetry) {
+        currentConfig.telemetry = {
+            opt_in: false,
+            cache_hits: 0,
+            cache_misses: 0,
+            total_searches: 0,
+            provider_wins: { lrclib: 0, netease: 0, musixmatch: 0, lyricsovh: 0 },
+            total_fetch_time_ms: 0
+        };
+    }
+}
+
+function recordTelemetryHit() {
+    initTelemetryConfig();
+    currentConfig.telemetry.cache_hits = (currentConfig.telemetry.cache_hits || 0) + 1;
+    currentConfig.telemetry.total_searches = (currentConfig.telemetry.total_searches || 0) + 1;
+    saveConfig();
+    renderTelemetryStats();
+}
+
+function recordTelemetryMiss() {
+    initTelemetryConfig();
+    currentConfig.telemetry.cache_misses = (currentConfig.telemetry.cache_misses || 0) + 1;
+    currentConfig.telemetry.total_searches = (currentConfig.telemetry.total_searches || 0) + 1;
+    saveConfig();
+    renderTelemetryStats();
+}
+
+function recordTelemetryProviderWin(provider, elapsedMs) {
+    initTelemetryConfig();
+    if (!currentConfig.telemetry.provider_wins) {
+        currentConfig.telemetry.provider_wins = { lrclib: 0, netease: 0, musixmatch: 0, lyricsovh: 0 };
+    }
+    const p = (provider || 'unknown').toLowerCase();
+    currentConfig.telemetry.provider_wins[p] = (currentConfig.telemetry.provider_wins[p] || 0) + 1;
+    currentConfig.telemetry.total_fetch_time_ms = (currentConfig.telemetry.total_fetch_time_ms || 0) + elapsedMs;
+    saveConfig();
+    renderTelemetryStats();
+}
+
+function renderTelemetryStats() {
+    initTelemetryConfig();
+    const t = currentConfig.telemetry;
+    const statHitEl = document.getElementById('stat-cache-hit');
+    const statScraperEl = document.getElementById('stat-top-scraper');
+    const statSpeedEl = document.getElementById('stat-avg-speed');
+
+    if (statHitEl) {
+        const hitRate = t.total_searches > 0 ? Math.round((t.cache_hits / t.total_searches) * 100) : 0;
+        statHitEl.innerText = `${hitRate}% (${t.cache_hits}/${t.total_searches})`;
+    }
+
+    if (statScraperEl) {
+        let topName = 'Lrclib';
+        let maxCount = 0;
+        let totalWins = 0;
+        const wins = t.provider_wins || {};
+        for (let k in wins) {
+            totalWins += wins[k];
+            if (wins[k] > maxCount) {
+                maxCount = wins[k];
+                topName = k;
+            }
+        }
+        const pct = totalWins > 0 ? Math.round((maxCount / totalWins) * 100) : 0;
+        statScraperEl.innerText = `${topName.toUpperCase()} (${pct}%)`;
+    }
+
+    if (statSpeedEl) {
+        const fetchCount = t.cache_misses || 1;
+        const avgMs = t.total_fetch_time_ms > 0 ? Math.round(t.total_fetch_time_ms / fetchCount) : 0;
+        statSpeedEl.innerText = `${avgMs}ms`;
+    }
+}
+
+function setupSponsorAndTelemetryListeners() {
+    const githubBtn = document.getElementById('sponsor-github-btn');
+    const bmacBtn = document.getElementById('sponsor-bmac-btn');
+    const telemetryOptin = document.getElementById('telemetry-optin');
+    const telemetryCard = document.getElementById('telemetry-stats-card');
+
+    if (githubBtn) {
+        githubBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        githubBtn.addEventListener('click', () => {
+            Neutralino.os.open('https://github.com/sponsors/bnbidipta');
+        });
+    }
+
+    if (bmacBtn) {
+        bmacBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        bmacBtn.addEventListener('click', () => {
+            Neutralino.os.open('https://buymeacoffee.com/bnbidipta');
+        });
+    }
+
+    if (telemetryOptin) {
+        telemetryOptin.addEventListener('mousedown', (e) => e.stopPropagation());
+        telemetryOptin.addEventListener('change', async (e) => {
+            initTelemetryConfig();
+            currentConfig.telemetry.opt_in = e.target.checked;
+            if (telemetryCard) {
+                telemetryCard.style.display = e.target.checked ? 'flex' : 'none';
+            }
+            if (e.target.checked) {
+                renderTelemetryStats();
+            }
+            await saveConfig();
+        });
+    }
+}
+setupSponsorAndTelemetryListeners();
 
 // --- Premium overlay control bindings ---
 const prevBtn = document.getElementById('prev-btn');
@@ -1184,8 +1316,10 @@ async function getCachedLyrics(trackName, artistName) {
     if (lyricsCache[key]) {
         lyricsCache[key].last_accessed = Date.now();
         await saveLyricsCache();
+        recordTelemetryHit();
         return lyricsCache[key].data;
     }
+    recordTelemetryMiss();
     return null;
 }
 
@@ -1317,6 +1451,7 @@ function startPlaybackMonitoring() {
 }
 
 async function fetchLyrics(trackName, artistName) {
+    const startTime = Date.now();
     try {
         // Secure Base64 args - no shell interpolation of track names
         const payload = btoa(JSON.stringify({
@@ -1326,10 +1461,12 @@ async function fetchLyrics(trackName, artistName) {
         }));
         const command = `chcp 65001 >nul && "${window.NL_PATH}/fetch_lyrics.exe" -EncodedArgs ${payload}`;
         const result = await Neutralino.os.execCommand(command);
+        const elapsed = Date.now() - startTime;
         if (!result.stdOut) throw new Error('Empty lyrics response');
         let data;
         try { data = JSON.parse(result.stdOut.trim()); } catch { throw new Error('Invalid lyrics JSON'); }
         if (data && data.lyrics) {
+            recordTelemetryProviderWin(data.provider || 'unknown', elapsed);
             if (data.synced) return { synced:true, lines: parseSyncedLyrics(data.lyrics) };
             else return { synced:false, lines: parsePlainLyrics(data.lyrics) };
         }

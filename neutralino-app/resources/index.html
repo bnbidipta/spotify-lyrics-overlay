@@ -112,10 +112,29 @@
                 </div>
             </div>
             
-            <div class="autostart-group">
-                <label class="checkbox-label" title="Automatically launch Spotify Lyrics Overlay when Windows starts">
-                    <input type="checkbox" id="autostart-checkbox"> Start with Windows
+            <div class="telemetry-group">
+                <label class="checkbox-label" title="Share anonymous performance metrics (cache hit rate, scraper speed, win rate) to improve lyrics matching">
+                    <input type="checkbox" id="telemetry-optin"> Share Anonymous Stats (Opt-in)
                 </label>
+                <div id="telemetry-stats-card" style="display: none;" class="telemetry-card">
+                    <div class="telemetry-stat-row">
+                        <span>Cache Hit Rate:</span> <strong id="stat-cache-hit">0%</strong>
+                    </div>
+                    <div class="telemetry-stat-row">
+                        <span>Top Scraper:</span> <strong id="stat-top-scraper">Lrclib (0%)</strong>
+                    </div>
+                    <div class="telemetry-stat-row">
+                        <span>Avg Speed:</span> <strong id="stat-avg-speed">0ms</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sponsor-group">
+                <div class="sponsor-title">💖 Support Development</div>
+                <div class="sponsor-buttons">
+                    <button id="sponsor-github-btn" class="sponsor-btn github">💖 Sponsor on GitHub</button>
+                    <button id="sponsor-bmac-btn" class="sponsor-btn bmac">☕ Buy Me a Coffee</button>
+                </div>
             </div>
             
             <div class="settings-disclaimer">
