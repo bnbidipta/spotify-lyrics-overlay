@@ -9,10 +9,12 @@ window.onunhandledrejection = function (event) {
     try { Neutralino.debug.log(`JS Unhandled: ${String(event.reason).substring(0,500)}`, 'ERROR'); } catch(e) {}
 };
 
+const BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID = 'ca6cf029ccd648068df4e49165bb139b';
+
 let accessToken = null;
 let playbackPollInterval = null;
 let lastTrackId = null;
-let spotifyClientId = '';
+let spotifyClientId = BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID;
 
 // Playback and Synced Lyrics state
 let parsedLyrics = [];
@@ -100,6 +102,7 @@ let currentConfig = {
     song_offsets: {},
     streamer_mode: false,
     autostart: false,
+    custom_client_id: "",
     telemetry: {
         opt_in: false,
         cache_hits: 0,
@@ -588,6 +591,16 @@ function applySettings() {
         if (isOptin) renderTelemetryStats();
     }
 
+    const customClientInput = document.getElementById('custom-client-id-input');
+    if (customClientInput) {
+        customClientInput.value = currentConfig.custom_client_id || '';
+    }
+
+    const disconnectBtn = document.getElementById('disconnect-account-btn');
+    if (disconnectBtn) {
+        disconnectBtn.style.display = accessToken ? 'block' : 'none';
+    }
+
     renderProviderList();
 }
 async function checkForUpdates() {
@@ -892,6 +905,35 @@ function setupSponsorAndTelemetryListeners() {
 }
 setupSponsorAndTelemetryListeners();
 
+function setupAccountAndCustomClientListeners() {
+    const customClientInput = document.getElementById('custom-client-id-input');
+    const disconnectBtn = document.getElementById('disconnect-account-btn');
+
+    if (customClientInput) {
+        customClientInput.addEventListener('mousedown', (e) => e.stopPropagation());
+        customClientInput.value = currentConfig.custom_client_id || '';
+        customClientInput.addEventListener('change', async (e) => {
+            const val = e.target.value.trim();
+            currentConfig.custom_client_id = val;
+            spotifyClientId = val || BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID;
+            await saveConfig();
+        });
+    }
+
+    if (disconnectBtn) {
+        disconnectBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        disconnectBtn.addEventListener('click', async () => {
+            if (confirm('Disconnect your Spotify account from the overlay?')) {
+                if (playbackPollInterval) clearInterval(playbackPollInterval);
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                await clearSession();
+                showAuthRequired();
+            }
+        });
+    }
+}
+setupAccountAndCustomClientListeners();
+
 // --- Premium overlay control bindings ---
 const prevBtn = document.getElementById('prev-btn');
 if (prevBtn) {
@@ -1159,27 +1201,37 @@ async function generatePkce() {
 function getRandomPort() { return 8888; }
 
 async function loadEnv() {
+    // 1. If user set a custom client ID in settings, use that
+    if (currentConfig.custom_client_id && currentConfig.custom_client_id.trim()) {
+        spotifyClientId = currentConfig.custom_client_id.trim();
+        return;
+    }
+
+    // 2. Check local .env file if user provided one
     let envContent = '';
     try { envContent = await Neutralino.filesystem.readFile('.env'); }
-    catch { try { envContent = await Neutralino.filesystem.readFile('../.env'); } catch {
-        songInfoEl.innerText = 'Configuration Error';
-        lyricsTextEl.innerText = 'Failed to find .env file. Create .env with SPOTIFY_CLIENT_ID=...';
-        return;
-    }}
-    try {
-        // Handle BOM and CRLF
-        envContent = envContent.replace(/^\uFEFF/, '');
-        envContent.split(/\r?\n/).forEach(line => {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) return;
-            const idx = trimmed.indexOf('=');
-            if (idx === -1) return;
-            const key = trimmed.substring(0, idx).trim();
-            const val = trimmed.substring(idx+1).trim().replace(/^["']|["']$/g, '');
-            if (key === 'SPOTIFY_CLIENT_ID') spotifyClientId = val;
-        });
-    } catch (err) {
-        console.error('Failed to parse env');
+    catch { try { envContent = await Neutralino.filesystem.readFile('../.env'); } catch {} }
+
+    if (envContent) {
+        try {
+            envContent = envContent.replace(/^\uFEFF/, '');
+            envContent.split(/\r?\n/).forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) return;
+                const idx = trimmed.indexOf('=');
+                if (idx === -1) return;
+                const key = trimmed.substring(0, idx).trim();
+                const val = trimmed.substring(idx+1).trim().replace(/^["']|["']$/g, '');
+                if (key === 'SPOTIFY_CLIENT_ID' && val) spotifyClientId = val;
+            });
+        } catch (err) {
+            console.warn('Failed to parse .env, falling back to built-in ID');
+        }
+    }
+
+    // 3. Fallback to built-in default zero-setup public Client ID
+    if (!spotifyClientId) {
+        spotifyClientId = BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID;
     }
 }
 
@@ -1198,11 +1250,15 @@ function showAuthRequired() {
     if (setupSection) setupSection.style.display = 'none';
     authSection.style.display = 'flex';
     lyricsSection.style.display = 'none';
+    const disconnectBtn = document.getElementById('disconnect-account-btn');
+    if (disconnectBtn) disconnectBtn.style.display = 'none';
 }
 function hideAuthRequired() {
     if (setupSection) setupSection.style.display = 'none';
     authSection.style.display = 'none';
     lyricsSection.style.display = 'flex';
+    const disconnectBtn = document.getElementById('disconnect-account-btn');
+    if (disconnectBtn) disconnectBtn.style.display = 'block';
 }
 
 // --- PKCE Token Exchange via fetch (NO PowerShell, NO secret) ---
@@ -1391,10 +1447,10 @@ async function refreshSpotifyToken() {
 }
 
 async function performLogin() {
-    if (!spotifyClientId) { alert('SPOTIFY_CLIENT_ID missing in .env'); return; }
+    if (!spotifyClientId) spotifyClientId = BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID;
     updateUI('Connecting to Spotify...', 'Browser opened for login...');
     loginBtn.disabled = true;
-    loginBtn.innerText = 'Logging in...';
+    loginBtn.innerHTML = `<span>Connecting...</span>`;
     try {
         const { verifier, challenge } = await generatePkce();
         const state = crypto.randomUUID();
@@ -1433,7 +1489,10 @@ async function performLogin() {
         showAuthRequired();
     } finally {
         loginBtn.disabled = false;
-        loginBtn.innerText = 'Login to Spotify';
+        loginBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.485 17.307c-.215.353-.675.465-1.028.25-2.82-1.722-6.37-2.112-10.55-1.157-.402.092-.803-.16-.895-.562-.092-.403.16-.804.563-.896 4.573-1.045 8.492-.596 11.66 1.338.353.215.465.674.25 1.027zm1.464-3.254c-.27.44-.848.58-1.288.31-3.228-1.984-8.148-2.558-11.967-1.398-.498.15-1.03-.133-1.18-.63-.152-.498.132-1.03.63-1.182 4.367-1.325 9.79-.687 13.495 1.59.44.27.58.847.31 1.288zm.126-3.39c-3.87-2.298-10.254-2.51-13.963-1.383-.593.18-1.224-.155-1.403-.748-.18-.593.155-1.224.748-1.403 4.26-1.293 11.31-1.043 15.762 1.6C15.22 8.97 15.39 9.72 14.88 10.2c-.44.52-1.2.68-1.8.463z"/></svg>
+            <span>Login with Spotify</span>
+        `;
     }
 }
 
@@ -1794,12 +1853,7 @@ async function onStart() {
     setupWindowBoundsListeners();
     checkForUpdates();
     await loadEnv();
-    if (!spotifyClientId) {
-        if (setupSection) setupSection.style.display = 'flex';
-        authSection.style.display = 'none';
-        lyricsSection.style.display = 'none';
-        return;
-    }
+
     const session = await loadSession();
     if (session && session.refreshToken) {
         // If access token is missing or expires within 5 minutes, refresh it now

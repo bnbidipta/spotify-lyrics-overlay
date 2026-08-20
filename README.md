@@ -66,19 +66,14 @@ Hover over the overlay to reveal the mini album art thumbnail, title, real-time 
 
 ---
 
-## Quick Start (One-Liner Install)
+## Quick Start (Zero Configuration)
 
-1. Download the latest release `.zip` or install via `SpotifyLyricsOverlay-Setup-2.4.0.exe` from [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
-2. Configure your Spotify Client ID (no client secret is needed):
-   - Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-   - Edit Settings of your App ➔ Add Redirect URI: `http://127.0.0.1:8888/callback`.
-3. Open PowerShell in the app folder and run this one-liner to create your configuration:
-   ```powershell
-   "SPOTIFY_CLIENT_ID=your_id_here" | Out-File -FilePath .env -Encoding utf8
-   ```
-4. Double-click **`spotify-lyrics-overlay.exe`** to launch the overlay.
-5. Click **Login to Spotify** (this launches your browser to verify your account).
-6. Play any song on Spotify!
+1. Download the latest release `.zip` or installer from [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
+2. Double-click **`spotify-lyrics-overlay.exe`** to launch the overlay.
+3. Click **Login with Spotify** (launches your browser to link your account in 1 click).
+4. Play any song on Spotify and enjoy real-time synchronized lyrics!
+
+> **Note**: Zero developer setup is required. The app comes pre-configured with public PKCE authentication out of the box. Power users can optionally provide a custom Client ID in **Settings ⚙️ ➔ Spotify Account & Client ID**.
 
 ---
 
