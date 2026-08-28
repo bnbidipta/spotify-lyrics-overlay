@@ -1465,13 +1465,15 @@ async function performLogin() {
         // Secure: port and state are validated ints/UUIDs, no user input
         const listenerCommand = `"${window.NL_PATH}/auth_listener.exe" -Port ${port} -ExpectedState ${state}`;
         const result = await Neutralino.os.execCommand(listenerCommand);
-        if (!result.stdOut) throw new Error(result.stdErr || 'No code returned');
+        if (!result.stdOut) throw new Error(result.stdErr || 'No response from authentication listener');
 
         let parsed;
-        try { parsed = JSON.parse(result.stdOut.trim()); } catch { throw new Error('Invalid auth response'); }
+        try { parsed = JSON.parse(result.stdOut.trim()); } catch { throw new Error('Invalid auth listener response'); }
+        if (parsed.error) throw new Error(parsed.error);
         if (!parsed.code || !parsed.state || parsed.state !== state) throw new Error('State mismatch or missing code');
 
-        const tokenData = await exchangeCodeViaFetch(parsed.code, verifier, port);
+        const activePort = parsed.port || port;
+        const tokenData = await exchangeCodeViaFetch(parsed.code, verifier, activePort);
         const expiresAt = Date.now() + ((tokenData.expires_in || 3600) * 1000);
         await saveSession({
             accessToken: tokenData.access_token,
@@ -1501,8 +1503,18 @@ let lyricsCache = {};
 async function loadLyricsCache() {
     try {
         const content = await Neutralino.filesystem.readFile('lyrics_cache.json');
-        if (content) {
+        if (!content || !content.trim()) {
+            lyricsCache = {};
+            return;
+        }
+        try {
             lyricsCache = JSON.parse(content);
+        } catch (parseErr) {
+            console.warn("Corrupted lyrics_cache.json detected, resetting cache.", parseErr);
+            lyricsCache = {};
+            try {
+                await Neutralino.filesystem.writeFile('lyrics_cache.json', JSON.stringify({}, null, 2));
+            } catch {}
         }
     } catch (e) {
         lyricsCache = {};
@@ -1604,22 +1616,34 @@ function startPlaybackMonitoring() {
             if (playBtn) playBtn.innerText = isPlaying ? '⏸️' : '▶️';
 
             const track = data.item;
-            trackDurationMs = track.duration_ms;
-            currentTrackName = track.name;
-            currentArtistName = track.artists ? track.artists.map(a=>a.name).join(', ') : '';
+            if (!track || !track.name) {
+                updateUI('No music playing', 'Play a song on Spotify to view lyrics.');
+                isPlaying = false; parsedLyrics = []; return;
+            }
+
+            trackDurationMs = track.duration_ms || 0;
+            const trackName = track.name || 'Unknown Track';
+            const artistsList = (track.artists && Array.isArray(track.artists) && track.artists.length > 0)
+                ? track.artists.map(a => a.name).filter(Boolean)
+                : ['Unknown Artist'];
+            const artistName = artistsList.join(', ');
+            const primaryArtist = artistsList[0] || 'Unknown Artist';
+
+            currentTrackName = trackName;
+            currentArtistName = artistName;
             currentAlbumArtUrl = (track.album && track.album.images && track.album.images.length > 0) ? track.album.images[0].url : '';
             
             const headerArt = document.getElementById('header-album-art');
             const headerTitle = document.getElementById('header-title');
             if (headerArt && track.album && track.album.images && track.album.images.length > 0) {
-                headerArt.src = track.album.images[2].url;
+                headerArt.src = track.album.images[Math.min(2, track.album.images.length - 1)].url;
                 headerArt.style.display = 'block';
             }
             if (headerTitle) {
-                headerTitle.innerText = `${track.name} - ${track.artists.map(a=>a.name).join(', ')}`;
+                headerTitle.innerText = `${trackName} - ${artistName}`;
             }
 
-            const trackId = track.id;
+            const trackId = track.id || track.uri || `track_${trackName}_${primaryArtist}`;
             if (trackId !== lastTrackId) {
                 lastTrackId = trackId;
                 
@@ -1632,10 +1656,10 @@ function startPlaybackMonitoring() {
                 const offsetVal = document.getElementById('sync-offset-val');
                 if (offsetVal) offsetVal.innerText = `${offset > 0 ? '+' : ''}${offset}ms`;
 
-                const songInfo = `${track.name} - ${track.artists.map(a=>a.name).join(', ')}`;
+                const songInfo = `${trackName} - ${artistName}`;
                 updateUI(songInfo, 'Searching for lyrics...');
                 lastActiveIndex = -1;
-                const cached = await getCachedLyrics(track.name, track.artists[0].name);
+                const cached = await getCachedLyrics(trackName, primaryArtist);
                 if (cached) {
                     parsedLyrics = cached.lines;
                     if (isTranslationActive) {
@@ -1644,26 +1668,26 @@ function startPlaybackMonitoring() {
                     renderLyrics(parsedLyrics);
                     updateUI(songInfo, null);
                     hideManualSearchPanel();
-                    checkTrackLikedStatus(trackId);
+                    if (track.id) checkTrackLikedStatus(track.id);
                     return;
                 }
-                lastSearchTrackName = track.name;
-                lastSearchArtistName = track.artists[0].name;
-                const result = await fetchLyrics(track.name, track.artists[0].name);
+                lastSearchTrackName = trackName;
+                lastSearchArtistName = primaryArtist;
+                const result = await fetchLyrics(trackName, primaryArtist);
                 parsedLyrics = result.lines;
                 if (isTranslationActive) {
                     await translateLyrics(parsedLyrics);
                 }
                 renderLyrics(parsedLyrics);
                 updateUI(songInfo, null);
-                const isError = result.lines.length===0 || (result.lines.length===1 && result.lines[0].text==="Lyrics not found for this track.");
+                const isError = result.lines.length === 0 || (result.lines.length === 1 && result.lines[0].text === "Lyrics not found for this track.");
                 if (isError) {
-                    showManualSearchPanel(track.artists[0].name, track.name);
+                    showManualSearchPanel(primaryArtist, trackName);
                 } else {
                     hideManualSearchPanel();
-                    try { await cacheLyrics(track.name, track.artists[0].name, result); } catch {}
+                    try { await cacheLyrics(trackName, primaryArtist, result); } catch {}
                 }
-                checkTrackLikedStatus(trackId);
+                if (track.id) checkTrackLikedStatus(track.id);
             }
         } catch (err) { console.error('Playback poll error', err); }
     }, 3000);
@@ -1674,8 +1698,8 @@ async function fetchLyrics(trackName, artistName) {
     try {
         // Secure Base64 args - no shell interpolation of track names
         const payload = btoa(JSON.stringify({
-            track: trackName.substring(0,200),
-            artist: artistName.substring(0,200),
+            track: (trackName || '').substring(0, 200),
+            artist: (artistName || '').substring(0, 200),
             providers: currentConfig.provider_order
         }));
         const command = `chcp 65001 >nul && "${window.NL_PATH}/fetch_lyrics.exe" -EncodedArgs ${payload}`;
@@ -1686,47 +1710,65 @@ async function fetchLyrics(trackName, artistName) {
         try { data = JSON.parse(result.stdOut.trim()); } catch { throw new Error('Invalid lyrics JSON'); }
         if (data && data.lyrics) {
             recordTelemetryProviderWin(data.provider || 'unknown', elapsed);
-            if (data.synced) return { synced:true, lines: parseSyncedLyrics(data.lyrics) };
-            else return { synced:false, lines: parsePlainLyrics(data.lyrics) };
+            if (data.synced) return { synced: true, lines: parseSyncedLyrics(data.lyrics) };
+            else return { synced: false, lines: parsePlainLyrics(data.lyrics) };
         }
     } catch (err) { console.error('Lyrics query error', err); }
-    return { synced:false, lines: [{ time:-1, text:"Lyrics not found for this track." }] };
+    return { synced: false, lines: [{ time: -1, text: "Lyrics not found for this track." }] };
 }
 
 function parseSyncedLyrics(syncedLyrics) {
+    if (!syncedLyrics) return [];
     const lines = syncedLyrics.split('\n');
     const parsed = [];
-    const regex = /^\[(\d+):(\d+)(?:[\.:](\d+))?\]\s*(.*)$/;
+    const tagRegex = /\[(\d+):(\d+)(?:[\.:](\d+))?\]/g;
+    
     for (let line of lines) {
-        const match = line.match(regex);
-        if (match) {
-            const minutes = parseInt(match[1],10);
-            const seconds = parseInt(match[2],10);
-            const msStr = match[3]||'0';
-            const ms = parseInt(msStr.padEnd(3,'0').substring(0,3),10);
-            const totalMs = (minutes*60+seconds)*1000+ms;
-            const rawText = match[4].trim();
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        
+        // Match all timestamp tags in the line (supports multiple e.g. [00:12.34][00:15.34] text)
+        const timestamps = [];
+        let match;
+        tagRegex.lastIndex = 0;
+        while ((match = tagRegex.exec(trimmed)) !== null) {
+            const minutes = parseInt(match[1], 10);
+            const seconds = parseInt(match[2], 10);
+            const msStr = match[3] || '0';
+            const ms = parseInt(msStr.padEnd(3, '0').substring(0, 3), 10);
+            const totalMs = (minutes * 60 + seconds) * 1000 + ms;
+            timestamps.push(totalMs);
+        }
+        
+        if (timestamps.length > 0) {
+            const rawText = trimmed.replace(/\[\d+:\d+(?:[\.:]\d+)?\]/g, '').trim();
             if (rawText) {
-                const words = parseEnhancedLrcLine(totalMs, rawText);
-                if (words) {
-                    const cleanText = rawText.replace(/<[0-9]{2}:[0-9]{2}[.:][0-9]{2,3}>/g, '').trim();
-                    parsed.push({ time: totalMs, text: cleanText, words });
-                } else {
-                    parsed.push({ time: totalMs, text: rawText });
+                const words = parseEnhancedLrcLine(timestamps[0], rawText);
+                for (let totalMs of timestamps) {
+                    if (words) {
+                        const cleanText = rawText.replace(/<[0-9]{2}:[0-9]{2}[.:][0-9]{2,3}>/g, '').trim();
+                        parsed.push({ time: totalMs, text: cleanText, words });
+                    } else {
+                        parsed.push({ time: totalMs, text: rawText });
+                    }
                 }
             }
         }
     }
+    
+    // Sort all parsed lines by timestamp ascending
+    parsed.sort((a, b) => a.time - b.time);
     return parsed;
 }
 
 function parsePlainLyrics(plainLyrics) {
-    return plainLyrics.split('\n').map(l=>({ time:-1, text:l.trim() })).filter(l=>l.text);
+    if (!plainLyrics) return [];
+    return plainLyrics.split('\n').map(l => ({ time: -1, text: l.trim() })).filter(l => l.text);
 }
 
 function renderLyrics(parsedLines) {
     lyricsTextEl.innerHTML = '';
-    parsedLines.forEach((line,index)=>{
+    parsedLines.forEach((line, index) => {
         const el = document.createElement('div');
         el.className = 'lyric-line';
         
@@ -1762,6 +1804,16 @@ function getEffectiveSyncOffset() {
     return currentConfig.sync_offset;
 }
 
+// User scroll tracking to prevent scroll hijacking
+let lastUserScrollTime = 0;
+if (lyricsTextEl) {
+    ['wheel', 'touchmove', 'pointerdown'].forEach(evt => {
+        lyricsTextEl.addEventListener(evt, () => {
+            lastUserScrollTime = Date.now();
+        }, { passive: true });
+    });
+}
+
 function startLyricsSyncLoop() {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     function update() {
@@ -1793,16 +1845,20 @@ function highlightActiveLyric(currentProgress) {
             activeIndex = i;
         }
     }
-    if (activeIndex!==-1) {
-        if (activeIndex!==lastActiveIndex) {
-            if (lastActiveIndex!==-1) {
+
+    if (activeIndex !== -1) {
+        if (activeIndex !== lastActiveIndex) {
+            if (lastActiveIndex !== -1) {
                 const prev = document.getElementById(`line-${lastActiveIndex}`);
                 if (prev) prev.classList.remove('active');
             }
             const activeEl = document.getElementById(`line-${activeIndex}`);
             if (activeEl) {
                 activeEl.classList.add('active');
-                activeEl.scrollIntoView({ behavior:'smooth', block:'center' });
+                // Only auto-scroll if user hasn't manually scrolled in the last 3 seconds
+                if (Date.now() - lastUserScrollTime > 3000) {
+                    activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             }
             lastActiveIndex = activeIndex;
         }
@@ -1818,6 +1874,13 @@ function highlightActiveLyric(currentProgress) {
                     span.classList.remove('active');
                 }
             });
+        }
+    } else if (parsedLyrics.length > 0 && parsedLyrics[0].time > 0) {
+        // Song is in instrumental intro before the first lyric line
+        if (lastActiveIndex !== -1) {
+            const prev = document.getElementById(`line-${lastActiveIndex}`);
+            if (prev) prev.classList.remove('active');
+            lastActiveIndex = -1;
         }
     }
 }

@@ -9,7 +9,15 @@ using System.Threading;
 using System.Web.Script.Serialization;
 
 class FetchLyrics {
-    private static string commonUserAgent = "Spotify-Lyrics-Overlay/2.0 (Neutralinojs)";
+    private static readonly string commonUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+    static FetchLyrics() {
+        try {
+            ServicePointManager.DefaultConnectionLimit = 25;
+            ServicePointManager.Expect100Continue = false;
+            ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls; // Tls12 | Tls
+        } catch {}
+    }
 
     struct ScraperResult {
         public bool Success;
@@ -19,7 +27,6 @@ class FetchLyrics {
     }
 
     static void Main(string[] args) {
-        // Force UTF-8 output streams
         Console.OutputEncoding = Encoding.UTF8;
 
         string encodedArgs = "";
@@ -43,12 +50,13 @@ class FetchLyrics {
             string json = Encoding.UTF8.GetString(bytes);
             var serializer = new JavaScriptSerializer();
             var dict = serializer.Deserialize<Dictionary<string, object>>(json);
-            track = ((string)dict["track"]).Trim();
-            artist = ((string)dict["artist"]).Trim();
+            track = (dict.ContainsKey("track") && dict["track"] != null) ? dict["track"].ToString().Trim() : "";
+            artist = (dict.ContainsKey("artist") && dict["artist"] != null) ? dict["artist"].ToString().Trim() : "";
             if (dict.ContainsKey("providers")) {
                 var list = (ArrayList)dict["providers"];
-                foreach (var item in list) providers.Add(item.ToString());
-            } else {
+                foreach (var item in list) if (item != null) providers.Add(item.ToString());
+            }
+            if (providers.Count == 0) {
                 providers.AddRange(new string[] { "lrclib", "netease", "musixmatch", "lyricsovh" });
             }
         } catch (Exception ex) {
@@ -56,11 +64,16 @@ class FetchLyrics {
             return;
         }
 
+        if (string.IsNullOrEmpty(track)) {
+            OutputResult(false, "No song title provided.", "none");
+            return;
+        }
+
         string originalTrack = track;
         string cleanTrack = CleanTrackName(track);
         string cleanArtist = CleanArtistName(artist);
 
-        // Divide into Tier 1 and Tier 2 based on provider configuration list
+        // Divide into Tier 1 (faster / synced primary) and Tier 2 (fallback)
         List<string> tier1 = new List<string>();
         List<string> tier2 = new List<string>();
         foreach (var p in providers) {
@@ -73,12 +86,12 @@ class FetchLyrics {
         // PASS 1: Exact Version Match
         if (originalTrack != cleanTrack) {
             if (tier1.Count > 0) {
-                var results = RaceScrapers(tier1, originalTrack, cleanArtist, 2000);
+                var results = RaceScrapers(tier1, originalTrack, cleanArtist, 2500);
                 bestResult = SelectBest(results, tier1);
             }
             if (!bestResult.Success || !bestResult.Synced) {
                 if (tier2.Count > 0) {
-                    var results2 = RaceScrapers(tier2, originalTrack, cleanArtist, 2000);
+                    var results2 = RaceScrapers(tier2, originalTrack, cleanArtist, 2500);
                     var best2 = SelectBest(results2, tier2);
                     if (best2.Success && (best2.Synced || !bestResult.Success)) {
                         bestResult = best2;
@@ -92,12 +105,12 @@ class FetchLyrics {
             return;
         }
 
-        // PASS 2: Main Title Match
-        string plainFallback = bestResult.Success && !bestResult.Synced ? bestResult.Lyrics : null;
-        string plainProvider = bestResult.Success && !bestResult.Synced ? bestResult.Provider : null;
+        // PASS 2: Main Cleaned Title Match
+        string plainFallback = (bestResult.Success && !bestResult.Synced) ? bestResult.Lyrics : null;
+        string plainProvider = (bestResult.Success && !bestResult.Synced) ? bestResult.Provider : null;
 
         if (tier1.Count > 0) {
-            var results = RaceScrapers(tier1, cleanTrack, cleanArtist, 2000);
+            var results = RaceScrapers(tier1, cleanTrack, cleanArtist, 2500);
             var cleanBest = SelectBest(results, tier1);
             if (cleanBest.Success && cleanBest.Synced) {
                 OutputResult(true, cleanBest.Lyrics, cleanBest.Provider);
@@ -109,7 +122,7 @@ class FetchLyrics {
         }
 
         if (tier2.Count > 0) {
-            var results = RaceScrapers(tier2, cleanTrack, cleanArtist, 2000);
+            var results = RaceScrapers(tier2, cleanTrack, cleanArtist, 2500);
             var cleanBest2 = SelectBest(results, tier2);
             if (cleanBest2.Success && cleanBest2.Synced) {
                 OutputResult(true, cleanBest2.Lyrics, cleanBest2.Provider);
@@ -128,6 +141,7 @@ class FetchLyrics {
     }
 
     static string CleanTrackName(string track) {
+        if (string.IsNullOrEmpty(track)) return "";
         string clean = track;
         clean = Regex.Replace(clean, @"\s*-\s*(Remastered|Deluxe|Live|Expanded|Special|Anniversary|Radio Edit|Remix|Edit|Mix|Single Version|Mono|Stereo).*?$", "", RegexOptions.IgnoreCase);
         clean = Regex.Replace(clean, @"\s*\((feat|with|featuring)\.?\s+[^)]+\)\s*$", "", RegexOptions.IgnoreCase);
@@ -136,6 +150,7 @@ class FetchLyrics {
     }
 
     static string CleanArtistName(string artist) {
+        if (string.IsNullOrEmpty(artist)) return "";
         string clean = Regex.Replace(artist, @"\s*(feat|with|featuring)\.?\s+.*$", "", RegexOptions.IgnoreCase);
         string[] parts = clean.Split(',');
         return parts[0].Trim();
@@ -161,6 +176,7 @@ class FetchLyrics {
                     results[p] = res;
                 }
             });
+            t.IsBackground = true;
             threads.Add(t);
             t.Start();
         }
@@ -172,13 +188,7 @@ class FetchLyrics {
                 if (t.IsAlive) { allDone = false; break; }
             }
             if (allDone) break;
-            Thread.Sleep(50);
-        }
-
-        foreach (var t in threads) {
-            if (t.IsAlive) {
-                try { t.Abort(); } catch {}
-            }
+            Thread.Sleep(30);
         }
 
         return results;
@@ -198,11 +208,14 @@ class FetchLyrics {
         return new ScraperResult { Success = false };
     }
 
-    static string HttpGet(string url, int timeoutMs = 5000) {
+    static string HttpGet(string url, int timeoutMs = 4000) {
         HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
         request.Method = "GET";
         request.UserAgent = commonUserAgent;
         request.Timeout = timeoutMs;
+        request.ReadWriteTimeout = timeoutMs;
+        request.KeepAlive = true;
+        request.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
         using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
         using (Stream stream = response.GetResponseStream())
         using (StreamReader reader = new StreamReader(stream, Encoding.UTF8)) {
@@ -216,11 +229,13 @@ class FetchLyrics {
             string json = HttpGet(url);
             var serializer = new JavaScriptSerializer();
             var dict = serializer.Deserialize<Dictionary<string, object>>(json);
-            if (dict.ContainsKey("syncedLyrics") && dict["syncedLyrics"] != null && !string.IsNullOrEmpty(dict["syncedLyrics"].ToString())) {
-                return new ScraperResult { Success = true, Synced = true, Lyrics = dict["syncedLyrics"].ToString() };
-            }
-            if (dict.ContainsKey("plainLyrics") && dict["plainLyrics"] != null && !string.IsNullOrEmpty(dict["plainLyrics"].ToString())) {
-                return new ScraperResult { Success = true, Synced = false, Lyrics = dict["plainLyrics"].ToString() };
+            if (dict != null) {
+                if (dict.ContainsKey("syncedLyrics") && dict["syncedLyrics"] != null && !string.IsNullOrEmpty(dict["syncedLyrics"].ToString())) {
+                    return new ScraperResult { Success = true, Synced = true, Lyrics = dict["syncedLyrics"].ToString() };
+                }
+                if (dict.ContainsKey("plainLyrics") && dict["plainLyrics"] != null && !string.IsNullOrEmpty(dict["plainLyrics"].ToString())) {
+                    return new ScraperResult { Success = true, Synced = false, Lyrics = dict["plainLyrics"].ToString() };
+                }
             }
         } catch {}
         return new ScraperResult { Success = false };
@@ -233,20 +248,22 @@ class FetchLyrics {
             string searchJson = HttpGet(searchUrl);
             var serializer = new JavaScriptSerializer();
             var searchDict = serializer.Deserialize<Dictionary<string, object>>(searchJson);
-            if (searchDict.ContainsKey("result")) {
+            if (searchDict != null && searchDict.ContainsKey("result") && searchDict["result"] != null) {
                 var resultObj = (Dictionary<string, object>)searchDict["result"];
-                if (resultObj.ContainsKey("songs")) {
+                if (resultObj != null && resultObj.ContainsKey("songs") && resultObj["songs"] != null) {
                     var songs = (ArrayList)resultObj["songs"];
                     if (songs.Count > 0) {
                         var firstSong = (Dictionary<string, object>)songs[0];
-                        object songId = firstSong["id"];
-                        string lyricUrl = "https://music.163.com/api/song/lyric?os=pc&id=" + songId + "&lv=-1&kv=-1&tv=-1";
-                        string lyricJson = HttpGet(lyricUrl);
-                        var lyricDict = serializer.Deserialize<Dictionary<string, object>>(lyricJson);
-                        if (lyricDict.ContainsKey("lrc")) {
-                            var lrc = (Dictionary<string, object>)lyricDict["lrc"];
-                            if (lrc.ContainsKey("lyric") && lrc["lyric"] != null) {
-                                return new ScraperResult { Success = true, Synced = true, Lyrics = lrc["lyric"].ToString() };
+                        if (firstSong != null && firstSong.ContainsKey("id")) {
+                            object songId = firstSong["id"];
+                            string lyricUrl = "https://music.163.com/api/song/lyric?os=pc&id=" + songId + "&lv=-1&kv=-1&tv=-1";
+                            string lyricJson = HttpGet(lyricUrl);
+                            var lyricDict = serializer.Deserialize<Dictionary<string, object>>(lyricJson);
+                            if (lyricDict != null && lyricDict.ContainsKey("lrc") && lyricDict["lrc"] != null) {
+                                var lrc = (Dictionary<string, object>)lyricDict["lrc"];
+                                if (lrc != null && lrc.ContainsKey("lyric") && lrc["lyric"] != null) {
+                                    return new ScraperResult { Success = true, Synced = true, Lyrics = lrc["lyric"].ToString() };
+                                }
                             }
                         }
                     }
@@ -333,7 +350,7 @@ class FetchLyrics {
             string json = HttpGet(url);
             var serializer = new JavaScriptSerializer();
             var dict = serializer.Deserialize<Dictionary<string, object>>(json);
-            if (dict.ContainsKey("lyrics")) {
+            if (dict != null && dict.ContainsKey("lyrics") && dict["lyrics"] != null) {
                 return new ScraperResult { Success = true, Synced = false, Lyrics = dict["lyrics"].ToString() };
             }
         } catch {}
