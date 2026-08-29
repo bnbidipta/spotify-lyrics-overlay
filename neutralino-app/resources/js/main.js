@@ -231,13 +231,36 @@ function queueWindowBoundsSave() {
     }, 500);
 }
 
+function updateResponsiveFontSize() {
+    const width = window.innerWidth || 600;
+    const height = window.innerHeight || 400;
+    
+    // Baseline is standard overlay size: 550px width x 350px height
+    const scaleX = width / 550;
+    const scaleY = height / 350;
+    const minScale = Math.min(scaleX, scaleY);
+    
+    // Dynamic multiplier between 0.60 (smallest 280x180) to 1.35 (large screen)
+    const dynamicMultiplier = Math.max(0.60, Math.min(1.35, minScale));
+    
+    const userBaseSize = currentConfig.font_size || 18;
+    const effectiveSize = Math.max(10, Math.round(userBaseSize * dynamicMultiplier));
+    
+    document.documentElement.style.setProperty('--font-size', `${effectiveSize}px`);
+    document.documentElement.style.setProperty('--window-scale', dynamicMultiplier.toFixed(2));
+}
+
 function setupWindowBoundsListeners() {
     if (window.NL_MODE === 'window') {
         try {
             Neutralino.events.on('windowMove', () => queueWindowBoundsSave());
-            Neutralino.events.on('windowResize', () => queueWindowBoundsSave());
+            Neutralino.events.on('windowResize', () => {
+                updateResponsiveFontSize();
+                queueWindowBoundsSave();
+            });
         } catch (e) {}
     }
+    window.addEventListener('resize', updateResponsiveFontSize);
 }
 
 async function restoreWindowGeometry() {
@@ -264,6 +287,7 @@ async function restoreWindowGeometry() {
             } else {
                 await Neutralino.window.center();
             }
+            updateResponsiveFontSize();
         }
     } catch (e) {
         console.error('Failed to restore window geometry', e);
@@ -393,17 +417,47 @@ if (lockBtn) {
     });
 }
 
-if (settingsBtn && settingsPanel) {
-    settingsBtn.addEventListener('click', () => {
-        if (settingsPanel.style.display === 'none') {
-            settingsPanel.style.display = 'flex';
-            settingsBtn.classList.add('active');
-        } else {
-            settingsPanel.style.display = 'none';
-            settingsBtn.classList.remove('active');
-        }
-    });
+function showSettings() {
+    if (!settingsPanel) return;
+    settingsPanel.style.display = 'flex';
+    if (settingsBtn) settingsBtn.classList.add('active');
 }
+
+function hideSettings() {
+    if (!settingsPanel) return;
+    settingsPanel.style.display = 'none';
+    if (settingsBtn) settingsBtn.classList.remove('active');
+}
+
+function toggleSettings() {
+    if (!settingsPanel) return;
+    if (settingsPanel.style.display === 'none') {
+        showSettings();
+    } else {
+        hideSettings();
+    }
+}
+
+if (settingsBtn) {
+    settingsBtn.addEventListener('click', toggleSettings);
+}
+
+const settingsCloseBtn = document.getElementById('settings-close-btn');
+if (settingsCloseBtn) {
+    settingsCloseBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    settingsCloseBtn.addEventListener('click', hideSettings);
+}
+
+// Global keyboard shortcuts (ESC to close settings or manual search)
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        if (settingsPanel && settingsPanel.style.display !== 'none') {
+            hideSettings();
+        } else if (manualSearchPanel && manualSearchPanel.style.display !== 'none') {
+            hideManualSearchPanel();
+        }
+    }
+});
 
 // System Tray Logic
 async function setupSystemTray() {
@@ -537,7 +591,7 @@ function applySettings() {
     const familySelect = document.getElementById('font-family-select');
     if (familySelect) familySelect.value = currentConfig.font_family;
 
-    document.documentElement.style.setProperty('--font-size', `${currentConfig.font_size}px`);
+    updateResponsiveFontSize();
     const sizeSlider = document.getElementById('font-size-slider');
     if (sizeSlider) sizeSlider.value = currentConfig.font_size;
     const sizeVal = document.getElementById('font-size-val');
@@ -657,7 +711,7 @@ if (sizeSlider) {
     sizeSlider.addEventListener('mousedown', (e) => e.stopPropagation());
     sizeSlider.addEventListener('input', async (e) => {
         currentConfig.font_size = parseInt(e.target.value, 10);
-        document.documentElement.style.setProperty('--font-size', `${e.target.value}px`);
+        updateResponsiveFontSize();
         const sizeVal = document.getElementById('font-size-val');
         if (sizeVal) sizeVal.innerText = `${e.target.value}px`;
         await saveConfig();
@@ -1900,7 +1954,10 @@ resizeHandle.addEventListener('pointerdown', async (e)=>{
 resizeHandle.addEventListener('pointermove', async (e)=>{
     if(!isResizing) return;
     const diffX=e.screenX-startX, diffY=e.screenY-startY;
-    try { await Neutralino.window.setSize({ width: Math.max(300,startWidth+diffX), height: Math.max(200,startHeight+diffY) }); } catch{}
+    try { 
+        await Neutralino.window.setSize({ width: Math.max(280,startWidth+diffX), height: Math.max(180,startHeight+diffY) }); 
+        updateResponsiveFontSize();
+    } catch{}
 });
 const stopResizing = (e)=>{ if(isResizing){ isResizing=false; try{ resizeHandle.releasePointerCapture(e.pointerId);}catch{}}};
 resizeHandle.addEventListener('pointerup', stopResizing);

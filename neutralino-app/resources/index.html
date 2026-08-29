@@ -46,106 +46,112 @@
             <button id="settings-btn" class="control-btn" title="Window Settings">⚙️</button>
         </div>
         
-        <!-- Settings Panel -->
+        <!-- Settings Modal Panel (Full scrollable overlay with sticky header) -->
         <div id="settings-panel" style="display: none;">
-            <div class="slider-group">
-                <label>Opacity: <span id="opacity-val">80%</span></label>
-                <input type="range" id="opacity-slider" min="10" max="100" value="80">
+            <div class="settings-header-bar">
+                <span class="settings-header-title">⚙️ Settings</span>
+                <button id="settings-close-btn" class="settings-close-btn" title="Back to Lyrics">✕ Done</button>
             </div>
-            <div class="slider-group">
-                <label>Blur: <span id="blur-val">12px</span></label>
-                <input type="range" id="blur-slider" min="0" max="25" value="12">
-            </div>
-            <div class="slider-group">
-                <label>Font Family:</label>
-                <select id="font-family-select">
-                    <option value="Segoe UI">Segoe UI</option>
-                    <option value="Inter">Inter</option>
-                    <option value="Sora">Sora</option>
-                    <option value="Poppins">Poppins</option>
-                </select>
-            </div>
-            <div class="slider-group">
-                <label>Font Size: <span id="font-size-val">18px</span></label>
-                <input type="range" id="font-size-slider" min="12" max="32" value="18">
-            </div>
-            <div class="slider-group">
-                <label>Line Scale:</label>
-                <div class="toggle-group">
-                    <label class="radio-label"><input type="radio" name="line-scale" id="line-scale-12" value="1.2" checked> 1.2x</label>
-                    <label class="radio-label"><input type="radio" name="line-scale" id="line-scale-15" value="1.5"> 1.5x</label>
+            <div class="settings-scroll-body">
+                <div class="slider-group">
+                    <label>Opacity: <span id="opacity-val">80%</span></label>
+                    <input type="range" id="opacity-slider" min="10" max="100" value="80">
                 </div>
-            </div>
-            <div class="slider-group">
-                <label>Sync Offset: <span id="sync-offset-val">0ms</span></label>
-                <input type="range" id="sync-offset-slider" min="-500" max="500" step="50" value="0">
-            </div>
-            <div class="slider-group">
-                <label>Theme:</label>
-                <select id="theme-select">
-                    <option value="dark">Dark</option>
-                    <option value="amoled">AMOLED</option>
-                    <option value="light">Light</option>
-                    <option value="transparent">Transparent</option>
-                </select>
-            </div>
-            <div class="provider-order-group">
-                <label class="section-label">Provider Priority:</label>
-                <div id="provider-list">
-                    <!-- Loaded dynamically via js -->
+                <div class="slider-group">
+                    <label>Blur: <span id="blur-val">12px</span></label>
+                    <input type="range" id="blur-slider" min="0" max="25" value="12">
                 </div>
-            </div>
-            
-            <div class="opt-in-group">
-                <label class="checkbox-label" title="Enable Musixmatch search (opt-in due to terms of service)">
-                    <input type="checkbox" id="musixmatch-optin"> Enable Musixmatch (Opt-in)
-                </label>
-            </div>
-            
-            <div class="streamer-mode-group">
-                <label class="checkbox-label" title="Enable local WebSocket server for OBS Studio Browser Source">
-                    <input type="checkbox" id="streamer-mode-optin"> Streamer Mode (OBS Overlay)
-                </label>
-                <div id="streamer-mode-info" style="display: none;">
-                    <span id="obs-url-text">http://127.0.0.1:5001/overlay</span>
-                    <button id="copy-obs-url-btn" class="obs-copy-btn">Copy OBS Link</button>
+                <div class="slider-group">
+                    <label>Font Family:</label>
+                    <select id="font-family-select">
+                        <option value="Segoe UI">Segoe UI</option>
+                        <option value="Inter">Inter</option>
+                        <option value="Sora">Sora</option>
+                        <option value="Poppins">Poppins</option>
+                    </select>
                 </div>
-            </div>
-            
-            <div class="telemetry-group">
-                <label class="checkbox-label" title="Share anonymous performance metrics (cache hit rate, scraper speed, win rate) to improve lyrics matching">
-                    <input type="checkbox" id="telemetry-optin"> Share Anonymous Stats (Opt-in)
-                </label>
-                <div id="telemetry-stats-card" style="display: none;" class="telemetry-card">
-                    <div class="telemetry-stat-row">
-                        <span>Cache Hit Rate:</span> <strong id="stat-cache-hit">0%</strong>
-                    </div>
-                    <div class="telemetry-stat-row">
-                        <span>Top Scraper:</span> <strong id="stat-top-scraper">Lrclib (0%)</strong>
-                    </div>
-                    <div class="telemetry-stat-row">
-                        <span>Avg Speed:</span> <strong id="stat-avg-speed">0ms</strong>
+                <div class="slider-group">
+                    <label>Base Font Size: <span id="font-size-val">18px</span></label>
+                    <input type="range" id="font-size-slider" min="12" max="32" value="18">
+                </div>
+                <div class="slider-group">
+                    <label>Line Scale:</label>
+                    <div class="toggle-group">
+                        <label class="radio-label"><input type="radio" name="line-scale" id="line-scale-12" value="1.2" checked> 1.2x</label>
+                        <label class="radio-label"><input type="radio" name="line-scale" id="line-scale-15" value="1.5"> 1.5x</label>
                     </div>
                 </div>
-            </div>
+                <div class="slider-group">
+                    <label>Sync Offset: <span id="sync-offset-val">0ms</span></label>
+                    <input type="range" id="sync-offset-slider" min="-500" max="500" step="50" value="0">
+                </div>
+                <div class="slider-group">
+                    <label>Theme:</label>
+                    <select id="theme-select">
+                        <option value="dark">Dark</option>
+                        <option value="amoled">AMOLED</option>
+                        <option value="light">Light</option>
+                        <option value="transparent">Transparent</option>
+                    </select>
+                </div>
+                <div class="provider-order-group">
+                    <label class="section-label">Provider Priority:</label>
+                    <div id="provider-list">
+                        <!-- Loaded dynamically via js -->
+                    </div>
+                </div>
+                
+                <div class="opt-in-group">
+                    <label class="checkbox-label" title="Enable Musixmatch search (opt-in due to terms of service)">
+                        <input type="checkbox" id="musixmatch-optin"> Enable Musixmatch (Opt-in)
+                    </label>
+                </div>
+                
+                <div class="streamer-mode-group">
+                    <label class="checkbox-label" title="Enable local WebSocket server for OBS Studio Browser Source">
+                        <input type="checkbox" id="streamer-mode-optin"> Streamer Mode (OBS Overlay)
+                    </label>
+                    <div id="streamer-mode-info" style="display: none;">
+                        <span id="obs-url-text">http://127.0.0.1:5001/overlay</span>
+                        <button id="copy-obs-url-btn" class="obs-copy-btn">Copy OBS Link</button>
+                    </div>
+                </div>
+                
+                <div class="telemetry-group">
+                    <label class="checkbox-label" title="Share anonymous performance metrics (cache hit rate, scraper speed, win rate) to improve lyrics matching">
+                        <input type="checkbox" id="telemetry-optin"> Share Anonymous Stats (Opt-in)
+                    </label>
+                    <div id="telemetry-stats-card" style="display: none;" class="telemetry-card">
+                        <div class="telemetry-stat-row">
+                            <span>Cache Hit Rate:</span> <strong id="stat-cache-hit">0%</strong>
+                        </div>
+                        <div class="telemetry-stat-row">
+                            <span>Top Scraper:</span> <strong id="stat-top-scraper">Lrclib (0%)</strong>
+                        </div>
+                        <div class="telemetry-stat-row">
+                            <span>Avg Speed:</span> <strong id="stat-avg-speed">0ms</strong>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="sponsor-group">
-                <div class="sponsor-title">💖 Support Development</div>
-                <div class="sponsor-buttons">
-                    <button id="sponsor-github-btn" class="sponsor-btn github">💖 Sponsor on GitHub</button>
-                    <button id="sponsor-bmac-btn" class="sponsor-btn bmac">☕ Buy Me a Coffee</button>
+                <div class="sponsor-group">
+                    <div class="sponsor-title">💖 Support Development</div>
+                    <div class="sponsor-buttons">
+                        <button id="sponsor-github-btn" class="sponsor-btn github">💖 Sponsor on GitHub</button>
+                        <button id="sponsor-bmac-btn" class="sponsor-btn bmac">☕ Buy Me a Coffee</button>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="custom-client-group">
-                <label class="section-label">Spotify Account & Client ID:</label>
-                <input type="text" id="custom-client-id-input" class="custom-client-input" placeholder="Default: Built-in App ID (Zero Setup)" spellcheck="false" autocomplete="off">
-                <div class="custom-client-hint">Zero setup by default. Optional: Paste your custom Spotify Client ID.</div>
-                <button id="disconnect-account-btn" class="account-disconnect-btn" style="display: none;">Disconnect Spotify Account</button>
-            </div>
-            
-            <div class="settings-disclaimer">
-                Not affiliated with Spotify. Lyrics are sourced from third-party services.
+                
+                <div class="custom-client-group">
+                    <label class="section-label">Spotify Account & Client ID:</label>
+                    <input type="text" id="custom-client-id-input" class="custom-client-input" placeholder="Default: Built-in App ID (Zero Setup)" spellcheck="false" autocomplete="off">
+                    <div class="custom-client-hint">Zero setup by default. Optional: Paste your custom Spotify Client ID.</div>
+                    <button id="disconnect-account-btn" class="account-disconnect-btn" style="display: none;">Disconnect Spotify Account</button>
+                </div>
+                
+                <div class="settings-disclaimer">
+                    Not affiliated with Spotify. Lyrics are sourced from third-party services.
+                </div>
             </div>
         </div>
         
