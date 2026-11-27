@@ -1,13 +1,23 @@
 // Global error boundary logging to neutralinojs.log
 window.onerror = function (message, source, lineno, colno, error) {
-    // Do not log tokens - sanitize
     const safeMsg = String(message).substring(0, 500);
     try { Neutralino.debug.log(`JS Error: ${safeMsg} at ${source}:${lineno}:${colno}`, 'ERROR'); } catch(e) {}
-    return false;
+    return true; // Prevent noisy uncaught trace in DevTools console
 };
 window.onunhandledrejection = function (event) {
-    try { Neutralino.debug.log(`JS Unhandled: ${String(event.reason).substring(0,500)}`, 'ERROR'); } catch(e) {}
+    const reason = String(event.reason && event.reason.message ? event.reason.message : event.reason).substring(0, 500);
+    try { Neutralino.debug.log(`JS Unhandled: ${reason}`, 'ERROR'); } catch(e) {}
+    if (event.preventDefault) event.preventDefault();
 };
+
+// Network connection awareness
+window.addEventListener('offline', () => {
+    showToast('Network offline — waiting for connection');
+});
+window.addEventListener('online', () => {
+    showToast('Network reconnected');
+    pollPlaybackStatusOnce();
+});
 
 const BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID = 'ca6cf029ccd648068df4e49165bb139b';
 
@@ -26,13 +36,9 @@ let lastActiveIndex = -1;
 
 const authSection = document.getElementById('auth-section');
 const lyricsSection = document.getElementById('lyrics-section');
-const setupSection = document.getElementById('setup-section');
-const songInfoEl = document.getElementById('song-info');
 const lyricsTextEl = document.getElementById('lyrics-text');
 const loginBtn = document.getElementById('login-btn');
 const closeBtn = document.getElementById('close-btn');
-const getIdBtn = document.getElementById('get-id-btn');
-const watchLoomBtn = document.getElementById('watch-loom-btn');
 
 // Window controls
 const pinBtn = document.getElementById('pin-btn');
@@ -76,8 +82,6 @@ Neutralino.window.setDraggableRegion('drag-handle');
 
 closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 loginBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-if (getIdBtn) getIdBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-if (watchLoomBtn) watchLoomBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (updateBanner) updateBanner.addEventListener('mousedown', (e) => e.stopPropagation());
 if (pinBtn) pinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 if (lockBtn) lockBtn.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -93,25 +97,42 @@ let currentConfig = {
     always_on_top: true,
     window_opacity: 80,
     window_blur: 12,
-    font_size: 18,
+    font_size: 10,
     font_family: "Inter",
     line_scale: 1.2,
     sync_offset: 0,
     theme: "dark",
+    ambient_glow: true,
     provider_order: ["lrclib", "netease", "lyricsovh"],
     song_offsets: {},
     streamer_mode: false,
-    autostart: false,
-    custom_client_id: "",
-    telemetry: {
-        opt_in: false,
-        cache_hits: 0,
-        cache_misses: 0,
-        total_searches: 0,
-        provider_wins: { lrclib: 0, netease: 0, musixmatch: 0, lyricsovh: 0 },
-        total_fetch_time_ms: 0
-    }
+    custom_client_id: ""
 };
+
+// Per-user data folder (%APPDATA%\Overtone); set in initDataDir() before any config/cache I/O
+let DATA_DIR = '.';
+const dataPath = (name) => `${DATA_DIR}/${name}`;
+
+async function initDataDir() {
+    try {
+        const appData = await Neutralino.os.getPath('data');
+        DATA_DIR = `${appData}/Overtone`;
+        try { await Neutralino.filesystem.createDirectory(DATA_DIR); } catch (e) {}
+        // One-time migration from "Spotify Lyrics Overlay" (old %APPDATA% folder + old working-dir files)
+        try { await Neutralino.filesystem.getStats(dataPath('config.json')); return; } catch (e) {}
+        const oldDir = `${appData}/SpotifyLyricsOverlay`;
+        for (const [from, name] of [
+            [`${oldDir}/spotify_session.dat`, 'spotify_session.dat'],
+            [`${oldDir}/musixmatch_token.txt`, 'musixmatch_token.txt'],
+            [`${window.NL_PATH}/config.json`, 'config.json'],
+            [`${window.NL_PATH}/lyrics_cache.json`, 'lyrics_cache.json'],
+        ]) {
+            try { await Neutralino.filesystem.copy(from, dataPath(name)); } catch (e) {}
+        }
+    } catch (e) {
+        DATA_DIR = '.';
+    }
+}
 
 let currentTrackName = '';
 let currentArtistName = '';
@@ -122,12 +143,11 @@ let lastObsBroadcastMs = 0;
 async function startObsServer() {
     if (obsServerRunning) return;
     try {
-        const command = `"${window.NL_PATH}/obs_server.exe" -Port 5001`;
+        // -ParentPid lets the server exit on its own if Overtone dies
+        const command = `"${window.NL_PATH}/obs_server.exe" -Port 5001 -ParentPid ${window.NL_PID}`;
         Neutralino.os.execCommand(command, { background: true });
         obsServerRunning = true;
-    } catch (e) {
-        console.error("Failed to start OBS server", e);
-    }
+    } catch (e) {}
 }
 
 async function stopObsServer() {
@@ -183,52 +203,39 @@ async function updateObsServerState() {
 
 async function loadConfig() {
     try {
-        const content = await Neutralino.filesystem.readFile('config.json');
+        const content = await Neutralino.filesystem.readFile(dataPath('config.json'));
         if (content) {
             currentConfig = { ...currentConfig, ...JSON.parse(content) };
+            delete currentConfig.telemetry;
+            delete currentConfig.autostart;
             isAlwaysOnTop = currentConfig.always_on_top;
         }
-    } catch (e) {
-        console.log("No config.json found. Using defaults.");
-    }
+    } catch (e) {}
+}
+
+async function captureWindowBounds() {
+    if (window.NL_MODE !== 'window') return;
+    try {
+        const size = await Neutralino.window.getSize();
+        const pos = await Neutralino.window.getPosition();
+        currentConfig.window_width = size.width;
+        currentConfig.window_height = size.height;
+        currentConfig.window_x = pos.x;
+        currentConfig.window_y = pos.y;
+    } catch (e) {}
 }
 
 async function saveConfig() {
     try {
-        let size = { width: 600, height: 400 };
-        let pos = { x: 100, y: 100 };
-        if (window.NL_MODE === 'window') {
-            try {
-                size = await Neutralino.window.getSize();
-                pos = await Neutralino.window.getPosition();
-                currentConfig.window_width = size.width;
-                currentConfig.window_height = size.height;
-                currentConfig.window_x = pos.x;
-                currentConfig.window_y = pos.y;
-            } catch (err) {}
-        }
-        await Neutralino.filesystem.writeFile('config.json', JSON.stringify(currentConfig, null, 2));
-    } catch (e) {
-        console.error("Failed to save config.json", e);
-    }
+        await captureWindowBounds();
+        await Neutralino.filesystem.writeFile(dataPath('config.json'), JSON.stringify(currentConfig, null, 2));
+    } catch (e) {}
 }
 
 let windowBoundsSaveTimer = null;
 function queueWindowBoundsSave() {
     if (windowBoundsSaveTimer) clearTimeout(windowBoundsSaveTimer);
-    windowBoundsSaveTimer = setTimeout(async () => {
-        if (window.NL_MODE === 'window') {
-            try {
-                const size = await Neutralino.window.getSize();
-                const pos = await Neutralino.window.getPosition();
-                currentConfig.window_width = size.width;
-                currentConfig.window_height = size.height;
-                currentConfig.window_x = pos.x;
-                currentConfig.window_y = pos.y;
-                await Neutralino.filesystem.writeFile('config.json', JSON.stringify(currentConfig, null, 2));
-            } catch (e) {}
-        }
-    }, 500);
+    windowBoundsSaveTimer = setTimeout(saveConfig, 500);
 }
 
 function updateResponsiveFontSize() {
@@ -243,8 +250,8 @@ function updateResponsiveFontSize() {
     // Dynamic multiplier between 0.60 (smallest 280x180) to 1.35 (large screen)
     const dynamicMultiplier = Math.max(0.60, Math.min(1.35, minScale));
     
-    const userBaseSize = currentConfig.font_size || 18;
-    const effectiveSize = Math.max(10, Math.round(userBaseSize * dynamicMultiplier));
+    const userBaseSize = currentConfig.font_size || 10;
+    const effectiveSize = Math.max(8, Math.round(userBaseSize * dynamicMultiplier));
     
     document.documentElement.style.setProperty('--font-size', `${effectiveSize}px`);
     document.documentElement.style.setProperty('--window-scale', dynamicMultiplier.toFixed(2));
@@ -289,33 +296,21 @@ async function restoreWindowGeometry() {
             }
             updateResponsiveFontSize();
         }
-    } catch (e) {
-        console.error('Failed to restore window geometry', e);
-    }
+    } catch (e) {}
 }
 
+// X button, window close, and tray Quit all fully exit (stops helpers so nothing lingers in the tray)
+let isExiting = false;
 async function handleExit() {
+    if (isExiting) return;
+    isExiting = true;
     try { await saveConfig(); } catch (e) {}
+    if (obsServerRunning) await stopObsServer();
     Neutralino.app.exit();
 }
+closeBtn.addEventListener('click', handleExit);
+Neutralino.events.on('windowClose', handleExit);
 
-async function handleCloseButton() {
-    // Hide window (minimize to tray)
-    await Neutralino.window.hide();
-}
-closeBtn.addEventListener('click', handleCloseButton);
-Neutralino.events.on('windowClose', handleCloseButton);
-
-if (getIdBtn) {
-    getIdBtn.addEventListener('click', () => {
-        Neutralino.os.open('https://developer.spotify.com/dashboard');
-    });
-}
-if (watchLoomBtn) {
-    watchLoomBtn.addEventListener('click', () => {
-        Neutralino.os.open('https://www.loom.com/share/placeholder');
-    });
-}
 
 // Opacity & Blur Slider Logic
 function applyOpacity(val) {
@@ -333,18 +328,18 @@ function applyBlur(val) {
 }
 
 if (opacitySlider) {
-    opacitySlider.addEventListener('input', async (e) => {
+    opacitySlider.addEventListener('input', (e) => {
         currentConfig.window_opacity = parseInt(e.target.value, 10);
         applyOpacity(e.target.value);
-        await saveConfig();
     });
+    opacitySlider.addEventListener('change', saveConfig);
 }
 if (blurSlider) {
-    blurSlider.addEventListener('input', async (e) => {
+    blurSlider.addEventListener('input', (e) => {
         currentConfig.window_blur = parseInt(e.target.value, 10);
         applyBlur(e.target.value);
-        await saveConfig();
     });
+    blurSlider.addEventListener('change', saveConfig);
 }
 
 // Button controls UI updates & toggle handlers
@@ -634,17 +629,6 @@ function applySettings() {
         }
     }
 
-    const telemetryOptinEl = document.getElementById('telemetry-optin');
-    const telemetryCardEl = document.getElementById('telemetry-stats-card');
-    if (telemetryOptinEl) {
-        const isOptin = !!(currentConfig.telemetry && currentConfig.telemetry.opt_in);
-        telemetryOptinEl.checked = isOptin;
-        if (telemetryCardEl) {
-            telemetryCardEl.style.display = isOptin ? 'flex' : 'none';
-        }
-        if (isOptin) renderTelemetryStats();
-    }
-
     const customClientInput = document.getElementById('custom-client-id-input');
     if (customClientInput) {
         customClientInput.value = currentConfig.custom_client_id || '';
@@ -655,10 +639,20 @@ function applySettings() {
         disconnectBtn.style.display = accessToken ? 'block' : 'none';
     }
 
+    const ambientGlowCheckbox = document.getElementById('ambient-glow-optin');
+    if (ambientGlowCheckbox) {
+        ambientGlowCheckbox.checked = currentConfig.ambient_glow !== false;
+    }
+    updateAmbientBackdrop(currentAlbumArtUrl);
+
+    // Sync Spotify Watcher checkbox with registry state
+    checkSpotifyWatcherState();
+
     renderProviderList();
 }
 async function checkForUpdates() {
     try {
+        if (!navigator.onLine) return;
         const response = await fetch('https://api.github.com/repos/bnbidipta/spotify-lyrics-overlay/releases/latest');
         if (!response.ok) return;
         const data = await response.json();
@@ -679,13 +673,16 @@ async function checkForUpdates() {
             }
         }
     } catch (e) {
-        console.error("Failed to check for updates", e);
+        console.debug("Update check skipped (offline or rate-limited):", e.message || e);
     }
 }
 
 function isNewerVersion(latest, current) {
-    const l = latest.split('.').map(Number);
-    const c = current.split('.').map(Number);
+    if (!latest || !current) return false;
+    const cleanL = latest.replace(/^[^\d]+/, '');
+    const cleanC = current.replace(/^[^\d]+/, '');
+    const l = cleanL.split('.').map(x => parseInt(x, 10) || 0);
+    const c = cleanC.split('.').map(x => parseInt(x, 10) || 0);
     for (let i = 0; i < Math.max(l.length, c.length); i++) {
         const lVal = l[i] || 0;
         const cVal = c[i] || 0;
@@ -709,13 +706,13 @@ if (familySelect) {
 const sizeSlider = document.getElementById('font-size-slider');
 if (sizeSlider) {
     sizeSlider.addEventListener('mousedown', (e) => e.stopPropagation());
-    sizeSlider.addEventListener('input', async (e) => {
+    sizeSlider.addEventListener('input', (e) => {
         currentConfig.font_size = parseInt(e.target.value, 10);
         updateResponsiveFontSize();
         const sizeVal = document.getElementById('font-size-val');
         if (sizeVal) sizeVal.innerText = `${e.target.value}px`;
-        await saveConfig();
     });
+    sizeSlider.addEventListener('change', saveConfig);
 }
 
 const r12 = document.getElementById('line-scale-12');
@@ -744,7 +741,7 @@ if (r15) {
 const offsetSlider = document.getElementById('sync-offset-slider');
 if (offsetSlider) {
     offsetSlider.addEventListener('mousedown', (e) => e.stopPropagation());
-    offsetSlider.addEventListener('input', async (e) => {
+    offsetSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value, 10);
         if (lastTrackId) {
             if (!currentConfig.song_offsets) currentConfig.song_offsets = {};
@@ -754,8 +751,8 @@ if (offsetSlider) {
         }
         const offsetVal = document.getElementById('sync-offset-val');
         if (offsetVal) offsetVal.innerText = `${val > 0 ? '+' : ''}${val}ms`;
-        await saveConfig();
     });
+    offsetSlider.addEventListener('change', saveConfig);
 }
 
 const themeSelect = document.getElementById('theme-select');
@@ -764,6 +761,31 @@ if (themeSelect) {
     themeSelect.addEventListener('change', async (e) => {
         currentConfig.theme = e.target.value;
         if (lyricsContainer) lyricsContainer.className = `theme-${e.target.value}`;
+        updateAmbientBackdrop(currentAlbumArtUrl);
+        await saveConfig();
+    });
+}
+
+function updateAmbientBackdrop(imageUrl) {
+    const backdrop = document.getElementById('ambient-backdrop');
+    if (!backdrop) return;
+    const isGlowEnabled = currentConfig.ambient_glow !== false;
+    const isThemeAllowed = currentConfig.theme !== 'amoled' && currentConfig.theme !== 'transparent';
+    if (!isGlowEnabled || !isThemeAllowed || !imageUrl) {
+        backdrop.classList.remove('active');
+        backdrop.style.backgroundImage = 'none';
+        return;
+    }
+    backdrop.style.backgroundImage = `url("${imageUrl}")`;
+    backdrop.classList.add('active');
+}
+
+const ambientGlowCheckbox = document.getElementById('ambient-glow-optin');
+if (ambientGlowCheckbox) {
+    ambientGlowCheckbox.addEventListener('mousedown', (e) => e.stopPropagation());
+    ambientGlowCheckbox.addEventListener('change', async (e) => {
+        currentConfig.ambient_glow = e.target.checked;
+        updateAmbientBackdrop(currentAlbumArtUrl);
         await saveConfig();
     });
 }
@@ -815,118 +837,9 @@ if (copyObsUrlBtn) {
     });
 }
 
-async function checkAutostartRegistry() {
-    const autostartCheckbox = document.getElementById('autostart-checkbox');
-    if (!autostartCheckbox) return;
-    try {
-        const cmd = `"${window.NL_PATH}/window_utils.exe" -Action check-autostart`;
-        const res = await Neutralino.os.execCommand(cmd);
-        if (res && res.stdOut) {
-            const data = JSON.parse(res.stdOut.trim());
-            if (data && data.autostart !== undefined) {
-                autostartCheckbox.checked = data.autostart;
-                currentConfig.autostart = data.autostart;
-            }
-        }
-    } catch (e) {}
-}
-
-const autostartCheckbox = document.getElementById('autostart-checkbox');
-if (autostartCheckbox) {
-    autostartCheckbox.addEventListener('mousedown', (e) => e.stopPropagation());
-    autostartCheckbox.addEventListener('change', async (e) => {
-        const enable = e.target.checked;
-        currentConfig.autostart = enable;
-        try {
-            const action = enable ? 'enable-autostart' : 'disable-autostart';
-            const cmd = `"${window.NL_PATH}/window_utils.exe" -Action ${action}`;
-            await Neutralino.os.execCommand(cmd);
-        } catch (e) {}
-        await saveConfig();
-    });
-}
-
-function initTelemetryConfig() {
-    if (!currentConfig.telemetry) {
-        currentConfig.telemetry = {
-            opt_in: false,
-            cache_hits: 0,
-            cache_misses: 0,
-            total_searches: 0,
-            provider_wins: { lrclib: 0, netease: 0, musixmatch: 0, lyricsovh: 0 },
-            total_fetch_time_ms: 0
-        };
-    }
-}
-
-function recordTelemetryHit() {
-    initTelemetryConfig();
-    currentConfig.telemetry.cache_hits = (currentConfig.telemetry.cache_hits || 0) + 1;
-    currentConfig.telemetry.total_searches = (currentConfig.telemetry.total_searches || 0) + 1;
-    saveConfig();
-    renderTelemetryStats();
-}
-
-function recordTelemetryMiss() {
-    initTelemetryConfig();
-    currentConfig.telemetry.cache_misses = (currentConfig.telemetry.cache_misses || 0) + 1;
-    currentConfig.telemetry.total_searches = (currentConfig.telemetry.total_searches || 0) + 1;
-    saveConfig();
-    renderTelemetryStats();
-}
-
-function recordTelemetryProviderWin(provider, elapsedMs) {
-    initTelemetryConfig();
-    if (!currentConfig.telemetry.provider_wins) {
-        currentConfig.telemetry.provider_wins = { lrclib: 0, netease: 0, musixmatch: 0, lyricsovh: 0 };
-    }
-    const p = (provider || 'unknown').toLowerCase();
-    currentConfig.telemetry.provider_wins[p] = (currentConfig.telemetry.provider_wins[p] || 0) + 1;
-    currentConfig.telemetry.total_fetch_time_ms = (currentConfig.telemetry.total_fetch_time_ms || 0) + elapsedMs;
-    saveConfig();
-    renderTelemetryStats();
-}
-
-function renderTelemetryStats() {
-    initTelemetryConfig();
-    const t = currentConfig.telemetry;
-    const statHitEl = document.getElementById('stat-cache-hit');
-    const statScraperEl = document.getElementById('stat-top-scraper');
-    const statSpeedEl = document.getElementById('stat-avg-speed');
-
-    if (statHitEl) {
-        const hitRate = t.total_searches > 0 ? Math.round((t.cache_hits / t.total_searches) * 100) : 0;
-        statHitEl.innerText = `${hitRate}% (${t.cache_hits}/${t.total_searches})`;
-    }
-
-    if (statScraperEl) {
-        let topName = 'Lrclib';
-        let maxCount = 0;
-        let totalWins = 0;
-        const wins = t.provider_wins || {};
-        for (let k in wins) {
-            totalWins += wins[k];
-            if (wins[k] > maxCount) {
-                maxCount = wins[k];
-                topName = k;
-            }
-        }
-        const pct = totalWins > 0 ? Math.round((maxCount / totalWins) * 100) : 0;
-        statScraperEl.innerText = `${topName.toUpperCase()} (${pct}%)`;
-    }
-
-    if (statSpeedEl) {
-        const fetchCount = t.cache_misses || 1;
-        const avgMs = t.total_fetch_time_ms > 0 ? Math.round(t.total_fetch_time_ms / fetchCount) : 0;
-        statSpeedEl.innerText = `${avgMs}ms`;
-    }
-}
-
-function setupSponsorAndTelemetryListeners() {
+function setupSponsorListeners() {
     const githubBtn = document.getElementById('sponsor-github-btn');
     const bmacBtn = document.getElementById('sponsor-bmac-btn');
-    const telemetryOptin = document.getElementById('telemetry-optin');
-    const telemetryCard = document.getElementById('telemetry-stats-card');
 
     if (githubBtn) {
         githubBtn.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -942,22 +855,8 @@ function setupSponsorAndTelemetryListeners() {
         });
     }
 
-    if (telemetryOptin) {
-        telemetryOptin.addEventListener('mousedown', (e) => e.stopPropagation());
-        telemetryOptin.addEventListener('change', async (e) => {
-            initTelemetryConfig();
-            currentConfig.telemetry.opt_in = e.target.checked;
-            if (telemetryCard) {
-                telemetryCard.style.display = e.target.checked ? 'flex' : 'none';
-            }
-            if (e.target.checked) {
-                renderTelemetryStats();
-            }
-            await saveConfig();
-        });
-    }
 }
-setupSponsorAndTelemetryListeners();
+setupSponsorListeners();
 
 function setupAccountAndCustomClientListeners() {
     const customClientInput = document.getElementById('custom-client-id-input');
@@ -988,12 +887,81 @@ function setupAccountAndCustomClientListeners() {
 }
 setupAccountAndCustomClientListeners();
 
+// --- Spotify Watcher & Shortcuts ---
+async function checkSpotifyWatcherState() {
+    const watcherCheckbox = document.getElementById('spotify-watcher-optin');
+    if (!watcherCheckbox) return;
+    try {
+        const cmd = `"${window.NL_PATH}/window_utils.exe" -Action check-spotify-watcher`;
+        const res = await Neutralino.os.execCommand(cmd);
+        if (res && res.stdOut) {
+            const data = JSON.parse(res.stdOut.trim());
+            if (data && data.watcher !== undefined) {
+                watcherCheckbox.checked = data.watcher;
+            }
+        }
+    } catch (e) {}
+}
+
+const spotifyWatcherCheckbox = document.getElementById('spotify-watcher-optin');
+if (spotifyWatcherCheckbox) {
+    spotifyWatcherCheckbox.addEventListener('mousedown', (e) => e.stopPropagation());
+    spotifyWatcherCheckbox.addEventListener('change', async (e) => {
+        const enable = e.target.checked;
+        try {
+            const action = enable ? 'enable-spotify-watcher' : 'disable-spotify-watcher';
+            const cmd = `"${window.NL_PATH}/window_utils.exe" -Action ${action}`;
+            await Neutralino.os.execCommand(cmd);
+        } catch (e) {}
+    });
+}
+
+const createShortcutsBtn = document.getElementById('create-shortcuts-btn');
+const shortcutsFeedback = document.getElementById('shortcuts-feedback');
+if (createShortcutsBtn) {
+    createShortcutsBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    createShortcutsBtn.addEventListener('click', async () => {
+        createShortcutsBtn.disabled = true;
+        createShortcutsBtn.innerText = '⏳ Creating...';
+        if (shortcutsFeedback) {
+            shortcutsFeedback.innerText = '';
+            shortcutsFeedback.className = 'shortcuts-feedback';
+        }
+        try {
+            const cmd = `"${window.NL_PATH}/window_utils.exe" -Action create-shortcuts`;
+            const res = await Neutralino.os.execCommand(cmd);
+            if (res && res.stdOut) {
+                const data = JSON.parse(res.stdOut.trim());
+                if (data && (data.status === 'ok' || data.status === 'success')) {
+                    if (shortcutsFeedback) {
+                        const count = data.shortcuts_created !== undefined ? data.shortcuts_created : (data.created || 0);
+                        shortcutsFeedback.innerText = `✅ Created ${count} shortcut(s)!`;
+                        shortcutsFeedback.className = 'shortcuts-feedback success';
+                    }
+                } else {
+                    throw new Error(data.error || 'Unknown error');
+                }
+            }
+        } catch (e) {
+            if (shortcutsFeedback) {
+                shortcutsFeedback.innerText = '❌ Failed to create shortcuts';
+                shortcutsFeedback.className = 'shortcuts-feedback error';
+            }
+        }
+        createShortcutsBtn.disabled = false;
+        createShortcutsBtn.innerText = '🔗 Create / Update Desktop & Start Shortcuts';
+        setTimeout(() => {
+            if (shortcutsFeedback) shortcutsFeedback.innerText = '';
+        }, 4000);
+    });
+}
+
 // --- Premium overlay control bindings ---
 const prevBtn = document.getElementById('prev-btn');
 if (prevBtn) {
     prevBtn.addEventListener('click', async () => {
         await spotifyControl('previous', 'POST');
-        pollPlaybackStatusOnce();
+        setTimeout(pollPlaybackStatusOnce, 300);
     });
 }
 
@@ -1004,6 +972,7 @@ if (playBtn) {
         isPlaying = !isPlaying;
         playBtn.innerText = isPlaying ? '⏸️' : '▶️';
         await spotifyControl(action, 'PUT');
+        setTimeout(pollPlaybackStatusOnce, 300);
     });
 }
 
@@ -1011,7 +980,7 @@ const nextBtn = document.getElementById('next-btn');
 if (nextBtn) {
     nextBtn.addEventListener('click', async () => {
         await spotifyControl('next', 'POST');
-        pollPlaybackStatusOnce();
+        setTimeout(pollPlaybackStatusOnce, 300);
     });
 }
 
@@ -1044,9 +1013,77 @@ if (translateBtn) {
 }
 
 // Stop propagation to prevent window dragging when clicking controls
-const controlsButtons = document.querySelectorAll('#controls-bar button');
-controlsButtons.forEach(btn => {
+const headerButtons = document.querySelectorAll('#top-window-bar button, #player-bar button');
+headerButtons.forEach(btn => {
     btn.addEventListener('mousedown', (e) => e.stopPropagation());
+});
+
+// --- Quick-Sync Nudge & Toast Logic ---
+let toastTimeout = null;
+function showToast(text) {
+    const toastEl = document.getElementById('toast-indicator');
+    if (!toastEl) return;
+    toastEl.innerText = text;
+    toastEl.style.display = 'flex';
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+        toastEl.style.display = 'none';
+    }, 2000);
+}
+
+async function nudgeSync(deltaMs) {
+    const currentOffset = getEffectiveSyncOffset();
+    const newOffset = Math.max(-5000, Math.min(5000, currentOffset + deltaMs));
+    if (lastTrackId) {
+        if (!currentConfig.song_offsets) currentConfig.song_offsets = {};
+        currentConfig.song_offsets[lastTrackId] = newOffset;
+    } else {
+        currentConfig.sync_offset = newOffset;
+    }
+    const offsetSlider = document.getElementById('sync-offset-slider');
+    if (offsetSlider) offsetSlider.value = newOffset;
+    const offsetVal = document.getElementById('sync-offset-val');
+    if (offsetVal) offsetVal.innerText = `${newOffset > 0 ? '+' : ''}${newOffset}ms`;
+    showToast(`Sync Offset: ${newOffset > 0 ? '+' : ''}${newOffset}ms`);
+    await saveConfig();
+}
+
+async function resetSync() {
+    if (lastTrackId && currentConfig.song_offsets) {
+        delete currentConfig.song_offsets[lastTrackId];
+    }
+    currentConfig.sync_offset = 0;
+    const offsetSlider = document.getElementById('sync-offset-slider');
+    if (offsetSlider) offsetSlider.value = 0;
+    const offsetVal = document.getElementById('sync-offset-val');
+    if (offsetVal) offsetVal.innerText = `0ms`;
+    showToast(`Sync Offset Reset: 0ms`);
+    await saveConfig();
+}
+
+const nudgeBackBtn = document.getElementById('nudge-back-btn');
+const nudgeFwdBtn = document.getElementById('nudge-fwd-btn');
+if (nudgeBackBtn) {
+    nudgeBackBtn.addEventListener('click', () => nudgeSync(-500));
+    nudgeBackBtn.addEventListener('dblclick', () => resetSync());
+}
+if (nudgeFwdBtn) {
+    nudgeFwdBtn.addEventListener('click', () => nudgeSync(500));
+    nudgeFwdBtn.addEventListener('dblclick', () => resetSync());
+}
+
+window.addEventListener('keydown', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
+    if (e.key === '[') {
+        e.preventDefault();
+        nudgeSync(-500);
+    } else if (e.key === ']') {
+        e.preventDefault();
+        nudgeSync(500);
+    } else if (e.key === '\\') {
+        e.preventDefault();
+        resetSync();
+    }
 });
 
 async function spotifyControl(action, method = 'POST', body = null) {
@@ -1119,8 +1156,13 @@ async function checkTrackLikedStatus(trackId) {
 function updateLikeButtonUI() {
     const likeBtn = document.getElementById('like-btn');
     if (likeBtn) {
-        likeBtn.innerText = isCurrentTrackLiked ? '💚' : '🖤';
+        likeBtn.classList.toggle('liked', isCurrentTrackLiked);
         likeBtn.title = isCurrentTrackLiked ? 'Unlike Track' : 'Like Track';
+        const icon = likeBtn.querySelector('.heart-icon');
+        if (icon) {
+            icon.setAttribute('fill', isCurrentTrackLiked ? '#1DB954' : 'none');
+            icon.setAttribute('stroke', isCurrentTrackLiked ? '#1DB954' : 'rgba(255, 255, 255, 0.85)');
+        }
     }
 }
 
@@ -1146,6 +1188,7 @@ async function pollPlaybackStatusOnce() {
 // --- Translation & Transliteration Helper ---
 async function translateLyrics(lines) {
     try {
+        if (!navigator.onLine) return;
         const textToTranslate = lines.map(l => l.text).join('\n');
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(textToTranslate)}`;
         const response = await fetch(url);
@@ -1161,7 +1204,7 @@ async function translateLyrics(lines) {
             });
         }
     } catch (e) {
-        console.error("Failed to translate lyrics", e);
+        console.debug("Translation note:", e.message || e);
     }
 }
 
@@ -1241,10 +1284,7 @@ function escapeHtml(str) {
 
 // --- Secure helpers ---
 function base64UrlEncode(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let b of bytes) binary += String.fromCharCode(b);
-    return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    return btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 async function generatePkce() {
     const verifierBytes = crypto.getRandomValues(new Uint8Array(64));
@@ -1252,45 +1292,20 @@ async function generatePkce() {
     const challenge = base64UrlEncode(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
     return { verifier, challenge };
 }
-function getRandomPort() { return 8888; }
-
+function toBase64Utf8(str) {
+    return btoa(unescape(encodeURIComponent(str)));
+}
+function fromBase64Utf8(b64) {
+    return decodeURIComponent(escape(atob(b64)));
+}
 async function loadEnv() {
-    // 1. If user set a custom client ID in settings, use that
-    if (currentConfig.custom_client_id && currentConfig.custom_client_id.trim()) {
-        spotifyClientId = currentConfig.custom_client_id.trim();
-        return;
-    }
-
-    // 2. Check local .env file if user provided one
-    let envContent = '';
-    try { envContent = await Neutralino.filesystem.readFile('.env'); }
-    catch { try { envContent = await Neutralino.filesystem.readFile('../.env'); } catch {} }
-
-    if (envContent) {
-        try {
-            envContent = envContent.replace(/^\uFEFF/, '');
-            envContent.split(/\r?\n/).forEach(line => {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith('#')) return;
-                const idx = trimmed.indexOf('=');
-                if (idx === -1) return;
-                const key = trimmed.substring(0, idx).trim();
-                const val = trimmed.substring(idx+1).trim().replace(/^["']|["']$/g, '');
-                if (key === 'SPOTIFY_CLIENT_ID' && val) spotifyClientId = val;
-            });
-        } catch (err) {
-            console.warn('Failed to parse .env, falling back to built-in ID');
-        }
-    }
-
-    // 3. Fallback to built-in default zero-setup public Client ID
-    if (!spotifyClientId) {
-        spotifyClientId = BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID;
-    }
+    // Custom client ID from Settings, else the built-in public PKCE client ID
+    spotifyClientId = (currentConfig.custom_client_id || '').trim() || BUILTIN_DEFAULT_SPOTIFY_CLIENT_ID;
 }
 
 function updateUI(songInfo, placeholderText) {
-    songInfoEl.innerText = songInfo;
+    const headerTitle = document.getElementById('header-title');
+    if (headerTitle) headerTitle.innerText = songInfo;
     if (placeholderText) displayPlaceholderLyric(placeholderText);
 }
 function displayPlaceholderLyric(text) {
@@ -1301,14 +1316,12 @@ function displayPlaceholderLyric(text) {
     lyricsTextEl.appendChild(lineEl);
 }
 function showAuthRequired() {
-    if (setupSection) setupSection.style.display = 'none';
     authSection.style.display = 'flex';
     lyricsSection.style.display = 'none';
     const disconnectBtn = document.getElementById('disconnect-account-btn');
     if (disconnectBtn) disconnectBtn.style.display = 'none';
 }
 function hideAuthRequired() {
-    if (setupSection) setupSection.style.display = 'none';
     authSection.style.display = 'none';
     lyricsSection.style.display = 'flex';
     const disconnectBtn = document.getElementById('disconnect-account-btn');
@@ -1341,7 +1354,7 @@ async function saveSession(session) {
 
     // 2. Save encrypted via DPAPI secure_store.exe (survives origin/port changes & restarts)
     try {
-        const payload = btoa(unescape(encodeURIComponent(JSON.stringify(currentSession))));
+        const payload = toBase64Utf8(JSON.stringify(currentSession));
         const cmd = `"${window.NL_PATH}/secure_store.exe" save-b64 spotify_session ${payload}`;
         await Neutralino.os.execCommand(cmd);
     } catch(e) {
@@ -1355,7 +1368,7 @@ async function loadSession() {
         const cmd = `"${window.NL_PATH}/secure_store.exe" load spotify_session`;
         const res = await Neutralino.os.execCommand(cmd);
         if (res && res.stdOut && res.stdOut.trim()) {
-            const rawJson = decodeURIComponent(escape(atob(res.stdOut.trim())));
+            const rawJson = fromBase64Utf8(res.stdOut.trim());
             const data = JSON.parse(rawJson);
             if (data && (data.accessToken || data.refreshToken)) {
                 currentSession = data;
@@ -1364,7 +1377,7 @@ async function loadSession() {
             }
         }
     } catch(e) {
-        console.warn('Failed to load from secure_store', e);
+        console.debug('Secure store note:', e.message || e);
     }
 
     // 2. Fallback to localStorage
@@ -1450,7 +1463,7 @@ async function refreshSpotifyToken() {
     refreshPromise = (async () => {
         try {
             const session = await loadSession();
-            const refreshToken = session ? session.refreshToken : null;
+            const refreshToken = (currentSession && currentSession.refreshToken) || (session ? session.refreshToken : null);
             if (!refreshToken) throw new Error('No refresh token available');
 
             const body = new URLSearchParams({
@@ -1471,7 +1484,7 @@ async function refreshSpotifyToken() {
                 
                 // If Spotify explicitly returns 400 with invalid_grant, the token is revoked
                 if (res.status === 400 && errorData && errorData.error === 'invalid_grant') {
-                    console.error('Refresh token revoked:', errorData);
+                    console.error('Refresh token revoked');
                     await clearSession();
                     throw new Error('Refresh token revoked: ' + (errorData.error_description || 'invalid_grant'));
                 }
@@ -1508,17 +1521,18 @@ async function performLogin() {
     try {
         const { verifier, challenge } = await generatePkce();
         const state = crypto.randomUUID();
-        const port = getRandomPort();
+        const port = 8888;
         sessionStorage.setItem('pkce_verifier', verifier);
         sessionStorage.setItem('oauth_state', state);
         sessionStorage.setItem('oauth_port', port.toString());
 
         const authUrl = `https://accounts.spotify.com/authorize?client_id=${encodeURIComponent(spotifyClientId)}&redirect_uri=${encodeURIComponent(`http://127.0.0.1:${port}/callback`)}&response_type=code&scope=user-read-currently-playing%20user-modify-playback-state%20user-library-read%20user-library-modify&code_challenge=${challenge}&code_challenge_method=S256&state=${state}&show_dialog=true`;
-        await Neutralino.os.open(authUrl);
 
         // Secure: port and state are validated ints/UUIDs, no user input
         const listenerCommand = `"${window.NL_PATH}/auth_listener.exe" -Port ${port} -ExpectedState ${state}`;
-        const result = await Neutralino.os.execCommand(listenerCommand);
+        const listenerPromise = Neutralino.os.execCommand(listenerCommand);
+        await Neutralino.os.open(authUrl);
+        const result = await listenerPromise;
         if (!result.stdOut) throw new Error(result.stdErr || 'No response from authentication listener');
 
         let parsed;
@@ -1556,7 +1570,7 @@ let lyricsCache = {};
 
 async function loadLyricsCache() {
     try {
-        const content = await Neutralino.filesystem.readFile('lyrics_cache.json');
+        const content = await Neutralino.filesystem.readFile(dataPath('lyrics_cache.json'));
         if (!content || !content.trim()) {
             lyricsCache = {};
             return;
@@ -1567,7 +1581,7 @@ async function loadLyricsCache() {
             console.warn("Corrupted lyrics_cache.json detected, resetting cache.", parseErr);
             lyricsCache = {};
             try {
-                await Neutralino.filesystem.writeFile('lyrics_cache.json', JSON.stringify({}, null, 2));
+                await Neutralino.filesystem.writeFile(dataPath('lyrics_cache.json'), JSON.stringify({}, null, 2));
             } catch {}
         }
     } catch (e) {
@@ -1577,7 +1591,7 @@ async function loadLyricsCache() {
 
 async function saveLyricsCache() {
     try {
-        await Neutralino.filesystem.writeFile('lyrics_cache.json', JSON.stringify(lyricsCache, null, 2));
+        await Neutralino.filesystem.writeFile(dataPath('lyrics_cache.json'), JSON.stringify(lyricsCache, null, 2));
     } catch (e) {
         console.error("Failed to save lyrics_cache.json", e);
     }
@@ -1588,10 +1602,8 @@ async function getCachedLyrics(trackName, artistName) {
     if (lyricsCache[key]) {
         lyricsCache[key].last_accessed = Date.now();
         await saveLyricsCache();
-        recordTelemetryHit();
         return lyricsCache[key].data;
     }
-    recordTelemetryMiss();
     return null;
 }
 
@@ -1619,6 +1631,28 @@ async function cacheLyrics(trackName, artistName, data) {
     await saveLyricsCache();
 }
 
+let consecutiveIdleCount = 0;
+
+function clearPlaybackUI() {
+    updateUI('No music playing', 'Play a song on Spotify to view lyrics.');
+    isPlaying = false;
+    parsedLyrics = [];
+    lastTrackId = null;
+    currentLikedTrackId = null;
+    currentTrackName = '';
+    currentArtistName = '';
+    currentAlbumArtUrl = '';
+    trackDurationMs = 0;
+    progressMsLastPoll = 0;
+    updateAmbientBackdrop('');
+    const headerArt = document.getElementById('header-album-art');
+    if (headerArt) headerArt.style.display = 'none';
+    const playBtn = document.getElementById('play-btn');
+    if (playBtn) playBtn.innerText = '▶️';
+    const progressBar = document.getElementById('progress-bar');
+    if (progressBar) progressBar.style.width = '0%';
+}
+
 function startPlaybackMonitoring() {
     if (playbackPollInterval) clearInterval(playbackPollInterval);
     startLyricsSyncLoop();
@@ -1631,12 +1665,21 @@ function startPlaybackMonitoring() {
         }
 
         try {
+            if (!navigator.onLine) return;
             const response = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
                 headers: { 'Authorization': `Bearer ${accessToken}` }
             });
             if (response.status === 204) {
-                updateUI('No music playing', 'Play a song on Spotify to view lyrics.');
-                isPlaying = false; parsedLyrics = []; return;
+                consecutiveIdleCount++;
+                isPlaying = false;
+                const playBtn = document.getElementById('play-btn');
+                if (playBtn) playBtn.innerText = '▶️';
+                // Keep paused track & lyrics visible for brief pauses (~30s / 10 polls).
+                // Only clear UI if truly idle for >30s or if no track was ever loaded.
+                if (consecutiveIdleCount > 10 || !lastTrackId) {
+                    clearPlaybackUI();
+                }
+                return;
             }
             if (response.status === 401) {
                 try {
@@ -1659,21 +1702,36 @@ function startPlaybackMonitoring() {
             if (response.status === 429) return;
             const data = await response.json();
             if (!data || !data.item) {
-                updateUI('No music playing', 'Play a song on Spotify to view lyrics.');
-                isPlaying = false; parsedLyrics = []; return;
+                consecutiveIdleCount++;
+                isPlaying = false;
+                const playBtn = document.getElementById('play-btn');
+                if (playBtn) playBtn.innerText = '▶️';
+                if (consecutiveIdleCount > 10 || !lastTrackId) {
+                    clearPlaybackUI();
+                }
+                return;
             }
+
+            const track = data.item;
+            if (!track || !track.name) {
+                consecutiveIdleCount++;
+                isPlaying = false;
+                const playBtn = document.getElementById('play-btn');
+                if (playBtn) playBtn.innerText = '▶️';
+                if (consecutiveIdleCount > 10 || !lastTrackId) {
+                    clearPlaybackUI();
+                }
+                return;
+            }
+
+            // Valid active playback data received
+            consecutiveIdleCount = 0;
             progressMsLastPoll = data.progress_ms;
             timestampLastPoll = Date.now();
             isPlaying = data.is_playing;
             
             const playBtn = document.getElementById('play-btn');
             if (playBtn) playBtn.innerText = isPlaying ? '⏸️' : '▶️';
-
-            const track = data.item;
-            if (!track || !track.name) {
-                updateUI('No music playing', 'Play a song on Spotify to view lyrics.');
-                isPlaying = false; parsedLyrics = []; return;
-            }
 
             trackDurationMs = track.duration_ms || 0;
             const trackName = track.name || 'Unknown Track';
@@ -1686,6 +1744,7 @@ function startPlaybackMonitoring() {
             currentTrackName = trackName;
             currentArtistName = artistName;
             currentAlbumArtUrl = (track.album && track.album.images && track.album.images.length > 0) ? track.album.images[0].url : '';
+            updateAmbientBackdrop(currentAlbumArtUrl);
             
             const headerArt = document.getElementById('header-album-art');
             const headerTitle = document.getElementById('header-title');
@@ -1698,7 +1757,9 @@ function startPlaybackMonitoring() {
             }
 
             const trackId = track.id || track.uri || `track_${trackName}_${primaryArtist}`;
-            if (trackId !== lastTrackId) {
+            const lyricsMissing = !parsedLyrics || parsedLyrics.length === 0;
+
+            if (trackId !== lastTrackId || lyricsMissing) {
                 lastTrackId = trackId;
                 
                 // Update sync offset slider for this track
@@ -1743,31 +1804,34 @@ function startPlaybackMonitoring() {
                 }
                 if (track.id) checkTrackLikedStatus(track.id);
             }
-        } catch (err) { console.error('Playback poll error', err); }
+        } catch (err) {
+            if (err.name === 'TypeError' || String(err).includes('fetch') || !navigator.onLine) {
+                console.debug('Playback poll network wait:', err.message);
+            } else {
+                console.warn('Playback poll notice:', err);
+            }
+        }
     }, 3000);
 }
 
 async function fetchLyrics(trackName, artistName) {
-    const startTime = Date.now();
     try {
-        // Secure Base64 args - no shell interpolation of track names
-        const payload = btoa(JSON.stringify({
+        // Secure UTF-8 Base64 args - safe for non-ASCII track and artist names
+        const payload = toBase64Utf8(JSON.stringify({
             track: (trackName || '').substring(0, 200),
             artist: (artistName || '').substring(0, 200),
             providers: currentConfig.provider_order
         }));
         const command = `chcp 65001 >nul && "${window.NL_PATH}/fetch_lyrics.exe" -EncodedArgs ${payload}`;
         const result = await Neutralino.os.execCommand(command);
-        const elapsed = Date.now() - startTime;
         if (!result.stdOut) throw new Error('Empty lyrics response');
         let data;
         try { data = JSON.parse(result.stdOut.trim()); } catch { throw new Error('Invalid lyrics JSON'); }
         if (data && data.lyrics) {
-            recordTelemetryProviderWin(data.provider || 'unknown', elapsed);
             if (data.synced) return { synced: true, lines: parseSyncedLyrics(data.lyrics) };
             else return { synced: false, lines: parsePlainLyrics(data.lyrics) };
         }
-    } catch (err) { console.error('Lyrics query error', err); }
+    } catch (err) { console.debug('Lyrics query note:', err.message || err); }
     return { synced: false, lines: [{ time: -1, text: "Lyrics not found for this track." }] };
 }
 
@@ -1822,6 +1886,7 @@ function parsePlainLyrics(plainLyrics) {
 
 function renderLyrics(parsedLines) {
     lyricsTextEl.innerHTML = '';
+
     parsedLines.forEach((line, index) => {
         const el = document.createElement('div');
         el.className = 'lyric-line';
@@ -1845,10 +1910,47 @@ function renderLyrics(parsedLines) {
             el.appendChild(transDiv);
         }
 
-        if (line.time !== -1) el.dataset.time = line.time;
+        if (line.time !== -1) {
+            el.dataset.time = line.time;
+            el.title = `Click to play from ${formatTime(line.time)}`;
+            el.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await seekToLyricLine(line.time, el);
+            });
+        }
         el.id = `line-${index}`;
         lyricsTextEl.appendChild(el);
     });
+}
+
+function formatTime(ms) {
+    const totalSecs = Math.floor(Math.max(0, ms) / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+async function seekToLyricLine(timeMs, el) {
+    if (!accessToken || timeMs < 0) return;
+
+    if (el) {
+        el.classList.add('seeking');
+        setTimeout(() => el.classList.remove('seeking'), 400);
+    }
+
+    // Optimistic progress update for immediate response
+    const effectiveOffset = getEffectiveSyncOffset();
+    progressMsLastPoll = Math.max(0, timeMs - effectiveOffset);
+    timestampLastPoll = Date.now();
+    highlightActiveLyric(timeMs);
+
+    showToast(`Jumped to ${formatTime(timeMs)}`);
+
+    try {
+        await spotifyControl(`seek?position_ms=${timeMs}`, 'PUT');
+    } catch (err) {
+        console.warn('Click-to-seek failed:', err);
+    }
 }
 
 function getEffectiveSyncOffset() {
@@ -1965,11 +2067,11 @@ resizeHandle.addEventListener('pointercancel', stopResizing);
 window.addEventListener('blur', stopResizing);
 
 async function onStart() {
+    await initDataDir();
     await loadConfig();
     await loadLyricsCache();
     await restoreWindowGeometry();
     applySettings();
-    await checkAutostartRegistry();
     setupWindowBoundsListeners();
     checkForUpdates();
     await loadEnv();

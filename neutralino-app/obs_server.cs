@@ -8,15 +8,28 @@ using System.Threading;
 using System.Threading.Tasks;
 
 class ObsServer {
-    private static ConcurrentBag<WebSocket> _clients = new ConcurrentBag<WebSocket>();
+    private static ConcurrentDictionary<WebSocket, SemaphoreSlim> _clients = new ConcurrentDictionary<WebSocket, SemaphoreSlim>();
     private static string _lastStateJson = "{\"currentLine\":\"Waiting for Spotify...\"}";
 
     static void Main(string[] args) {
+        Console.OutputEncoding = Encoding.UTF8;
         int port = 5001;
+        int parentPid = 0;
         for (int i = 0; i < args.Length; i++) {
             if (args[i] == "-Port" && i + 1 < args.Length) {
                 int.TryParse(args[i + 1], out port);
             }
+            if (args[i] == "-ParentPid" && i + 1 < args.Length) {
+                int.TryParse(args[i + 1], out parentPid);
+            }
+        }
+
+        // Exit when Overtone exits (or crashes) so the server never lingers holding the port
+        if (parentPid > 0) {
+            Task.Run(() => {
+                try { System.Diagnostics.Process.GetProcessById(parentPid).WaitForExit(); } catch { }
+                Environment.Exit(0);
+            });
         }
 
         HttpListener listener = new HttpListener();
@@ -68,10 +81,11 @@ class ObsServer {
 
         // WebSocket Upgrade
         if (context.Request.IsWebSocketRequest) {
+            WebSocket ws = null;
             try {
                 HttpListenerWebSocketContext wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
-                WebSocket ws = wsContext.WebSocket;
-                _clients.Add(ws);
+                ws = wsContext.WebSocket;
+                _clients.TryAdd(ws, new SemaphoreSlim(1, 1));
 
                 // Send latest state on connect
                 byte[] initBuffer = Encoding.UTF8.GetBytes(_lastStateJson);
@@ -82,11 +96,17 @@ class ObsServer {
                 while (ws.State == WebSocketState.Open) {
                     WebSocketReceiveResult result = await ws.ReceiveAsync(new ArraySegment<byte>(rcvBuffer), CancellationToken.None);
                     if (result.MessageType == WebSocketMessageType.Close) {
-                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                        try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None); } catch {}
                         break;
                     }
                 }
             } catch { }
+            finally {
+                if (ws != null) {
+                    RemoveClient(ws);
+                    try { ws.Dispose(); } catch {}
+                }
+            }
             return;
         }
 
@@ -123,17 +143,35 @@ class ObsServer {
         response.Close();
     }
 
+    private static void RemoveClient(WebSocket ws) {
+        if (ws == null) return;
+        SemaphoreSlim dummy;
+        _clients.TryRemove(ws, out dummy);
+    }
+
     private static void Broadcast(string message) {
         byte[] buffer = Encoding.UTF8.GetBytes(message);
         ArraySegment<byte> segment = new ArraySegment<byte>(buffer);
 
-        foreach (WebSocket ws in _clients.ToArray()) {
+        foreach (var kvp in _clients.ToArray()) {
+            WebSocket ws = kvp.Key;
+            SemaphoreSlim sem = kvp.Value;
             if (ws.State == WebSocketState.Open) {
                 Task.Run(async () => {
-                    try {
-                        await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
-                    } catch { }
+                    if (await sem.WaitAsync(100)) {
+                        try {
+                            if (ws.State == WebSocketState.Open) {
+                                await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                            }
+                        } catch {
+                            RemoveClient(ws);
+                        } finally {
+                            sem.Release();
+                        }
+                    }
                 });
+            } else {
+                RemoveClient(ws);
             }
         }
     }
@@ -143,7 +181,7 @@ class ObsServer {
 <html lang=""en"">
 <head>
     <meta charset=""UTF-8"">
-    <title>Spotify Lyrics OBS Overlay</title>
+    <title>Overtone OBS Overlay</title>
     <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
     <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
     <link href=""https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap"" rel=""stylesheet"">
@@ -244,7 +282,7 @@ class ObsServer {
     <div id=""obs-container"">
         <div id=""header-box"">
             <img id=""album-art"" src="""" alt=""art"" />
-            <span id=""track-info"">Spotify Lyrics</span>
+            <span id=""track-info"">Overtone</span>
         </div>
         <div id=""progress-track"">
             <div id=""progress-fill""></div>

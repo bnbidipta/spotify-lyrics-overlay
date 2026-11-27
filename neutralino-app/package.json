@@ -1,12 +1,11 @@
 {
-  "name": "spotify-lyrics-overlay",
+  "name": "overtone",
   "version": "2.5.2",
-  "description": "Spotify lyrics overlay application using Neutralinojs",
+  "description": "Overtone - floating synced lyrics for Spotify",
   "scripts": {
     "build": "neu build"
   },
   "devDependencies": {
-    "@neutralinojs/neu": "^11.7.2",
-    "uuid": "^8.3.2"
+    "@neutralinojs/neu": "^11.7.2"
   }
 }

@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const latestReleaseUrl = 'https://github.com/bnbidipta/spotify-lyrics-overlay/releases/latest';
 
     if (isWindows) {
-        btnText.innerText = 'Download for Windows x64 (v2.8.0)';
+        btnText.innerText = 'Download for Windows x64';
         primaryDownloadBtn.href = latestReleaseUrl;
         osHint.innerHTML = '⚡ Direct Installer (.exe) & Standalone Zip (.zip) • ~1.9 MB Size';
     } else if (isMac) {

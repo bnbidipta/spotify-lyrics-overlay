@@ -28,3 +28,9 @@ neutralino-release/.tmp/
 neutralino-app/.tmp/
 *.zip
 *Setup*.exe
+
+# Compiled C# helpers (built by build.ps1)
+neutralino-app/*.exe
+
+# Local knowledge-graph output
+graphify-out/

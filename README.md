@@ -1,134 +1,81 @@
-# Spotify Lyrics Overlay
+# Overtone
 
 <p align="center">
-  <a href="https://bnbidipta.github.io/spotify-lyrics-overlay/"><strong>🌐 Live Landing Page & Product Demo »</strong></a>
+  <img src="neutralino-app/resources/icons/appIcon.png" width="128" height="128" alt="Overtone app icon" />
 </p>
 
 <p align="center">
-  <a href="https://bnbidipta.github.io/spotify-lyrics-overlay/"><img src="https://img.shields.io/badge/Size-1.9_MB-success.svg" alt="Size 1.9MB" /></a>
+  <a href="https://bnbidipta.github.io/spotify-lyrics-overlay/"><strong>🌐 Landing page »</strong></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/bnbidipta/spotify-lyrics-overlay/releases"><img src="https://img.shields.io/github/v/release/bnbidipta/spotify-lyrics-overlay.svg" alt="Release" /></a>
-  <a href="https://github.com/bnbidipta/spotify-lyrics-overlay/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License MIT" /></a>
+  <img src="https://img.shields.io/badge/Size-%3C2_MB-success.svg" alt="Size under 2 MB" />
+  <a href="LICENSE.txt"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License MIT" /></a>
 </p>
 
-An ultra-lightweight, highly customizable, and responsive desktop lyrics overlay for Spotify on Windows. Built using **Neutralinojs**, it leverages your system's native Edge/WebView2 rendering engine to display stunning glassmorphic, Apple Music-style synchronized scrolling lyrics at a tiny size of **under 2 Megabytes** (a 98% reduction from its original 91.6MB Electron implementation).
+**Overtone** is a tiny (< 2 MB) Windows desktop app that floats synced lyrics for whatever you're playing on Spotify in a borderless, glassy overlay. Built on **Neutralinojs** (native WebView2) with small compiled C# helpers, so it stays light where Electron apps weigh 150-300 MB.
 
 <p align="center">
-  <img src="neutralino-app/resources/icons/appIcon.png" width="128" height="128" alt="Spotify Lyrics Overlay App Icon" />
+  <img src="docs/preview.png" width="450" alt="Overtone overlay showing synced lyrics" />
 </p>
-
-## 🖼️ Feature Showcases (GIF Placeholders)
-
-### 1. Apple Music-Style Karaoke (Word-by-Word Highlight)
-Individual lyric words are parsed dynamically using enhanced LRC timestamp tags and illuminated in real-time as the song plays.
-<p align="center">
-  <img src="demo_karaoke.gif" width="450" alt="[PLACEHOLDER: Add demo_karaoke.gif showing word-by-word active text highlights]" />
-</p>
-
-### 2. Multi-Lingual Translation & Hindi Transliteration
-Click the translation button (`文`) to dynamically translate foreign lyrics to English on the fly. Devanagari Hindi text automatically displays Roman transliterations alongside translations.
-<p align="center">
-  <img src="demo_translation.gif" width="450" alt="[PLACEHOLDER: Add demo_translation.gif showing Japanese/Hindi translations and Roman script transliterations]" />
-</p>
-
-### 3. Integrated Media Player Header & Controls
-Hover over the overlay to reveal the mini album art thumbnail, title, real-time smooth progress bar, and playback control buttons (`⏮️`, `⏸️/▶️`, `⏭️`, `🖤/💚`).
-<p align="center">
-  <img src="demo_controls.gif" width="450" alt="[PLACEHOLDER: Add demo_controls.gif showing clicking play/pause, liking songs, and watching the progress bar fill up]" />
-</p>
-
----
-
-## ⚡ Comparison: The Lightest Lyrics App
-
-| Metric / Feature | **Spotify Lyrics Overlay** | **Spicetify (popup-lyrics)** | **Musixmatch Desktop** |
-| :--- | :--- | :--- | :--- |
-| **Disk Size** | 🚀 **< 2 MB** | ~150 MB | ~300 MB |
-| **Memory Usage** | 🔋 **~15-20 MB** | ~150 MB+ (embedded inside Spotify) | ~300 MB+ (Electron shell) |
-| **Credentials** | Client ID only (PKCE) | Local Spotify client hooks | In-app login |
-| **Lyrics Fallback** | **4-Level Pipeline** (Lrclib ➔ NetEase ➔ Musixmatch ➔ Lyrics.ovh) | Spotify default lyrics database | Musixmatch database only |
-| **Window Type** | Borderless glassmorphic overlay | Embedded browser extension | Standalone heavy window |
-
----
 
 ## Features
 
-- **Apple Music-Style Synced Scrolling**: Real-time sync loop (`requestAnimationFrame`) utilizing a robust timing scan to scroll the active lyrics line smoothly with zero CPU overhead.
-- **RCE-Safe Base64 Command Parsing**: Calls local helper binaries via Base64-JSON encoded arguments. This seals command parameter injection vulnerabilities from song metadata or redirect URLs.
-- **Client-Side PKCE OAuth Flow**: Complete elimination of client secrets (`SPOTIFY_CLIENT_SECRET`). Uses browser-based PKCE (Proof Key for Code Exchange) flow directly over `fetch`, making credentials sharing obsolete.
-- **CSRF Protection & Port Security**: Standard loopback address (`http://127.0.0.1:8888/callback`) with state verification matching UUID keys to block Cross-Site Request Forgery (CSRF).
-- **Multi-Provider Scraper Pipeline**: Queries Lrclib, NetEase, and Lyrics.ovh concurrently using native compiled C# helper threads. **Musixmatch (reverse-engineered) is opt-in disabled by default** for licensing safety.
-- **Local Disk-based LRU Lyrics Cache**: Caches searched lyrics locally in `lyrics_cache.json` for instant 0ms load times on replays. Keeps cache size under 50 items.
-- **WebView2 Transparency & Control Fixes**:
-  - Drag the borderless window easily from the designated top header bar.
-  - Jitter-free window resizing using Pointer Events and pointer captures.
-  - User-select disabled globally to prevent accidental text selections.
-- **Antivirus Hardened**: Spawns native compiled C# executables (`.exe`) instead of PowerShell script files bypassing policies, preventing false-positive security flags.
+- **Synced lyrics** that scroll line-by-line, with word-by-word karaoke highlighting when the lyrics carry per-word timing.
+- **Four lyric sources** tried in your chosen order: Lrclib, NetEase, Lyrics.ovh, and Musixmatch (opt-in, off by default). Manual search and paste-your-own `.lrc` when nothing is found.
+- **Translation** of lyrics to English; Hindi lyrics also get a Roman-letter transliteration.
+- **Sync tuning**: nudge forward/back (`[` / `]`, `\` to reset), a global offset slider, and a saved offset per song.
+- **Player controls** on hover: album art, progress bar, previous / play-pause / next, and like-to-library.
+- **Overlay window**: drag by the header, resize from the corner, pin always-on-top, or lock click-through. Opacity, blur, font, size and theme settings; ambient album-art glow.
+- **One-click Spotify login** via PKCE (no client secret), with an optional custom client ID. The session is encrypted with Windows DPAPI and refreshed automatically.
+- **Streamer mode**: an OBS browser source at `http://127.0.0.1:5001/overlay`.
+- **Auto-launch with Spotify** (optional): opens when Spotify starts and closes when it exits.
+- **Local lyrics cache** (last 50 songs) for instant replays.
 
----
+## Quick start
 
-## Quick Start (Zero Configuration)
+1. Download the installer or `.zip` from [Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
+2. Run **Overtone** and click **Login with Spotify**.
+3. Play a song on Spotify.
 
-1. Download the latest release `.zip` or installer from [GitHub Releases](https://github.com/bnbidipta/spotify-lyrics-overlay/releases).
-2. Double-click **`spotify-lyrics-overlay.exe`** to launch the overlay.
-3. Click **Login with Spotify** (launches your browser to link your account in 1 click).
-4. Play any song on Spotify and enjoy real-time synchronized lyrics!
+Settings, cache and the login session live in `%APPDATA%\Overtone`. Closing the window or choosing **Quit** from the tray icon exits the app fully.
 
-> **Note**: Zero developer setup is required. The app comes pre-configured with public PKCE authentication out of the box. Power users can optionally provide a custom Client ID in **Settings ⚙️ ➔ Spotify Account & Client ID**.
+## Building
 
----
+Prerequisites: Node.js, the [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (preinstalled on Windows 10/11), the .NET Framework `csc.exe` (ships with Windows), and optionally [Inno Setup 6](https://jrsoftware.org/isinfo.php) for the installer.
 
-## Workspace Directory Structure
-
-```
-├── .github/workflows/           # GitHub Actions Build pipeline
-│   └── build.yml
-├── neutralino-app/              # Application source code
-│   ├── resources/               # HTML, CSS, JavaScript, and asset files
-│   │   ├── css/
-│   │   ├── js/                  # main.js PKCE authentication & rendering logic
-│   │   ├── icons/               # App Icons
-│   │   └── index.html           # Frame layout and HTML structure (with CSP)
-│   ├── neutralino.config.json   # Neutralino configuration and mode profiles
-│   ├── auth_listener.cs         # OAuth code callback redirect listener (C# source)
-│   ├── fetch_lyrics.cs          # Unified parallel scraper (C# source)
-│   ├── secure_store.cs          # DPAPI secure local storage helper (C# source)
-│   └── window_utils.cs          # Native transparency window styles helper (C# source)
-│
-├── dist_release/                # Dynamic local release/packaging output
-├── installer.iss                # Inno Setup Windows installer configuration
-├── build_and_push.ps1           # Release build automation script
-└── .env                         # Local configuration environment
+```powershell
+cd neutralino-app; npm install; npx @neutralinojs/neu update; cd ..
+./build.ps1          # app + C# helpers + zip (+ installer if Inno Setup is installed)
 ```
 
----
+`build_and_push.ps1` runs `build.ps1` and then commits, tags and pushes a release. CI (`.github/workflows/build.yml`) runs the same `build.ps1`.
 
-## Building and Developing
+```
+├── neutralino-app/
+│   ├── resources/            # index.html, styles.css, js/main.js, icons/
+│   ├── neutralino.config.json
+│   ├── auth_listener.cs      # OAuth loopback callback listener
+│   ├── fetch_lyrics.cs       # multi-provider lyrics fetcher
+│   ├── secure_store.cs       # DPAPI session storage
+│   ├── window_utils.cs       # click-through, shortcuts, watcher registration
+│   ├── spotify_watcher.cs    # auto-launch with Spotify
+│   └── obs_server.cs         # OBS overlay server
+├── docs/                     # landing page (GitHub Pages)
+├── build.ps1                 # build + package
+├── build_and_push.ps1        # build + release
+└── installer.iss             # Inno Setup installer
+```
 
-### Prerequisites
-- Node.js installed.
-- [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (preinstalled on Windows 10/11).
-- MSBuild / .NET Framework `csc.exe` (installed by default with Windows).
-- Inno Setup Compiler (optional, for compiling installers).
+## Roadmap
 
-### Build steps:
-1. Navigate into the source folder:
-   ```bash
-   cd neutralino-app
-   ```
-2. Build the distribution package:
-   ```bash
-   npx @neutralinojs/neu build
-   ```
-   This generates the compiled binaries and `resources.neu` inside `neutralino-app/dist/`.
-
----
+- Evaluate [Windows App SDK](https://github.com/microsoft/WindowsAppSDK) (WinUI 3) for a native rewrite. Not adopted for now: it would drop the < 2 MB footprint.
 
 ## Disclaimer
 
-This application is not affiliated with, authorized, maintained, sponsored, or endorsed by Spotify or any of its affiliates or partners. Lyrics displayed in the application are retrieved dynamically from public third-party services (Lrclib, NetEase, Lyrics.ovh, and optionally Musixmatch) and are subject to their respective terms of service.
-
----
+Overtone is not affiliated with, endorsed by, or sponsored by Spotify. Lyrics come from third-party services (Lrclib, NetEase, Lyrics.ovh and optionally Musixmatch) and are subject to their terms.
 
 ## License
 
-ISC License. Made with ❤️ for Spotify overlays.
+[MIT](LICENSE.txt).

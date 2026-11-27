@@ -1,0 +1,43 @@
+MIT License
+
+Copyright (c) 2026 Bidipta Nandan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+THIRD-PARTY NOTICES & TRADEMARK DISCLAIMERS
+================================================================================
+
+1. Spotify Non-Affiliation Notice:
+   "Spotify" is a registered trademark of Spotify AB. Spotify Lyrics Overlay is
+   an independent, open-source project and is neither endorsed by, certified by,
+   nor otherwise affiliated with Spotify AB in any way. Playback control and metadata
+   retrieval are performed strictly through standard Spotify Developer Web APIs
+   in compliance with the user's explicit authorization.
+
+2. Lyric Providers & Content Rights:
+   Synchronized and plain-text lyrics rendered by this application are fetched
+   from public, community-maintained, or third-party lyric services including
+   LRCLIB (lrclib.net), NetEase Music, Musixmatch, and Lyrics.ovh.
+   All lyrics and associated metadata remain the exclusive intellectual property
+   of their respective songwriters, artists, and music publishers. This software
+   does not host, claim copyright to, or resell any lyrical content.
+
+3. End-User Responsibility:
+   This application is provided strictly for personal and educational use.

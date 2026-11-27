@@ -12,7 +12,7 @@ class SecureStore {
         string action = args[0].ToLower();
 
         try {
-            string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpotifyLyricsOverlay");
+            string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Overtone");
             if (!Directory.Exists(appData)) Directory.CreateDirectory(appData);
 
             if (action == "save-b64" && args.Length >= 3) {

@@ -276,7 +276,7 @@ class FetchLyrics {
     static ScraperResult QueryMusixmatch(string track, string artist) {
         try {
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            string tokenDir = Path.Combine(appData, "SpotifyLyricsOverlay");
+            string tokenDir = Path.Combine(appData, "Overtone");
             if (!Directory.Exists(tokenDir)) Directory.CreateDirectory(tokenDir);
             string tokenFile = Path.Combine(tokenDir, "musixmatch_token.txt");
 

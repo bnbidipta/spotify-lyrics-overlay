@@ -62,13 +62,17 @@ class AuthListener {
 
         string code = request.QueryString["code"];
         string state = request.QueryString["state"];
+        string error = request.QueryString["error"];
 
         string responseString = "";
-        if (state != expectedState) {
+        if (!string.IsNullOrEmpty(error)) {
+            responseString = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Login Cancelled</title></head><body style='font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#121212;color:white;'><div style='font-size:48px;margin-bottom:10px;'>🔒</div><h2 style='color:#ffaa00;'>Login Cancelled</h2><p style='color:#cccccc;'>Spotify authorization was not completed (" + System.Net.WebUtility.HtmlEncode(error) + "). You can return to Overtone.</p></body></html>";
+            response.StatusCode = 200;
+        } else if (state != expectedState) {
             responseString = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Auth Error</title></head><body style='font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#121212;color:white;'><h2 style='color:#ff5555;'>⚠️ Security State Mismatch</h2><p style='color:#aaaaaa;'>The authentication session state did not match. Please return to the overlay and try logging in again.</p></body></html>";
             response.StatusCode = 400;
         } else {
-            responseString = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Login Successful</title></head><body style='font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#121212;color:white;'><div style='font-size:48px;margin-bottom:10px;'>🟢</div><h2 style='color:#1DB954;'>Login Successful!</h2><p style='color:#cccccc;'>You can close this browser tab and return to Spotify Lyrics Overlay.</p></body></html>";
+            responseString = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Login Successful</title></head><body style='font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#121212;color:white;'><div style='font-size:48px;margin-bottom:10px;'>🟢</div><h2 style='color:#1DB954;'>Login Successful!</h2><p style='color:#cccccc;'>You can close this browser tab and return to Overtone.</p></body></html>";
             response.StatusCode = 200;
         }
 
@@ -83,10 +87,17 @@ class AuthListener {
 
         try { listener.Stop(); } catch {}
 
-        if (state == expectedState && !string.IsNullOrEmpty(code)) {
-            Console.WriteLine("{\"code\":\"" + code + "\",\"state\":\"" + state + "\",\"port\":" + actualPort + "}");
+        if (!string.IsNullOrEmpty(error)) {
+            Console.WriteLine("{\"error\":\"Spotify login cancelled: " + EscapeJson(error) + "\"}");
+        } else if (state == expectedState && !string.IsNullOrEmpty(code)) {
+            Console.WriteLine("{\"code\":\"" + EscapeJson(code) + "\",\"state\":\"" + EscapeJson(state) + "\",\"port\":" + actualPort + "}");
         } else {
             Console.WriteLine("{\"error\":\"State mismatch or missing authorization code\"}");
         }
+    }
+
+    static string EscapeJson(string s) {
+        if (s == null) return "";
+        return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
     }
 }
