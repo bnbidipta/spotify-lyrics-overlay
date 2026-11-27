@@ -1,6 +1,6 @@
 {
   "name": "overtone",
-  "version": "2.5.2",
+  "version": "2.6.0",
   "description": "Overtone - floating synced lyrics for Spotify",
   "scripts": {
     "build": "neu build"
